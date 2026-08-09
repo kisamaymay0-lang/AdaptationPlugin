@@ -8,7 +8,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
-import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDamageEvent.DamageCause;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -27,7 +27,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
     @Override
     public void onEnable() {
         getServer().getPluginManager().registerEvents(this, this);
-        getLogger().info("Плагин AdaptationPlugin [LORE-BASED] успешно запущен!");
+        getLogger().info("Плагин AdaptationPlugin [50%-FIX] успешно запущен!");
     }
 
     @Override
@@ -40,8 +40,9 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
         activeAdaptations.clear();
     }
 
+    // ВАЖНО: Меняем событие на EntityDamageEvent, чтобы ловить ЛАВУ, ПАДЕНИЕ и ВСЕ типы урона!
     @EventHandler(priority = EventPriority.HIGH)
-    public void onPlayerDamage(EntityDamageByEntityEvent event) {
+    public void onPlayerDamage(EntityDamageEvent event) {
         if (!(event.getEntity() instanceof Player)) return;
         Player player = (Player) event.getEntity();
         UUID uuid = player.getUniqueId();
@@ -49,13 +50,12 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
         int totalEnchantLevel = 0;
         int pieceCount = 0;
         
-        // Сканируем броню по тексту в описании (Lore)
+        // Проверка брони по тексту Lore
         for (ItemStack armor : player.getInventory().getArmorContents()) {
             if (armor != null && armor.hasItemMeta()) {
                 ItemMeta meta = armor.getItemMeta();
                 if (meta.hasLore()) {
                     for (String line : meta.getLore()) {
-                        // Ищем строчку с уровнем адаптации в описании предмета
                         if (line.contains("Адаптация III")) {
                             totalEnchantLevel += 3;
                             pieceCount++;
@@ -76,15 +76,17 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
 
         if (pieceCount == 0) return;
 
-        // Расчет урона во время активной адаптации
+        // Если адаптация уже работает — режем урон ровно ВДВОЕ на фулл-сете
         if (activeAdaptations.containsKey(uuid)) {
             String currentAdaptType = activeAdaptations.get(uuid);
             String incomingType = getDamageType(event.getCause());
 
             if (incomingType.equals(currentAdaptType)) {
-                double reduction = 1.0 - (pieceCount * 0.08); 
+                // Защита: 12.5% за каждый предмет. 4 предмета = 50% (урон срезается вдвое) [stem-calculative-problem-solving]
+                double reduction = 1.0 - (pieceCount * 0.125); 
                 event.setDamage(event.getDamage() * reduction);
             } else {
+                // Штраф: урон не совпал -> получаем на 10% больше за каждый предмет
                 double penalty = 1.0 + (pieceCount * 0.10);
                 event.setDamage(event.getDamage() * penalty);
             }
@@ -93,6 +95,10 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
 
         // Логика накопления ударов
         String damageType = getDamageType(event.getCause());
+        
+        // Безопасность: игнорируем типы урона, которые не входят в категории (например, голодание или пустота)
+        if (damageType.equals("UNKNOWN")) return;
+
         double avgLevel = (double) totalEnchantLevel / pieceCount;
         int requiredHits = Math.max(3, (int) (10 - (avgLevel * 2)));
 
@@ -145,17 +151,42 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
         activeTimers.put(uuid, timerTask);
     }
 
+    // Распределяем абсолютно ВСЕ ванильные источники урона Майнкрафта
     private String getDamageType(DamageCause cause) {
         switch (cause) {
+            // 🏹 СНАРЯДЫ И ВЗРЫВЫ
             case PROJECTILE:
+            case BLOCK_EXPLOSION:
+            case ENTITY_EXPLOSION:
                 return "RANGED"; 
+
+            // 🧪 МАГИЯ И ЗЕЛЬЯ
             case MAGIC:
             case POISON:
             case WITHER:
             case DRAGON_BREATH:
+            case SONIC_BOOM: // Крик Вардена
                 return "MAGIC";  
+
+            // ⚔️ БЛИЖНИЙ УРОН, ЛАВА, ОКРУЖЕНИЕ
+            case ENTITY_ATTACK:
+            case ENTITY_SWEEP_ATTACK:
+            case LAVA:
+            case FIRE:
+            case FIRE_TICK:
+            case CONTACT: // Кактусы / Ягоды
+            case FALL: // Падение с высоты
+            case FLY_INTO_WALL: // Элитры
+            case SUFFOCATION: // Задохнулся в стене
+            case DROWNING: // Утонул
+            case HOT_FLOOR: // Магма-блок
+            case FREEZE: // Рыхлый снег
+            case THORNS: // Чары шипов
+                return "MELEE";
+
+            // Игнорируем то, от чего броня спасать не должна (команды, бездна, голод)
             default:
-                return "MELEE";  
+                return "UNKNOWN";  
         }
     }
 
