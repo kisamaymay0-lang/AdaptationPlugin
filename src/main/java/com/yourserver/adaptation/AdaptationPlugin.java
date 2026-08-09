@@ -3,7 +3,6 @@ package com.yourserver.adaptation;
 import net.md_5.bungee.api.ChatColor;
 import net.md_5.bungee.api.ChatMessageType;
 import net.md_5.bungee.api.chat.TextComponent;
-import org.bukkit.NamespacedKey;
 import org.bukkit.Sound;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -12,7 +11,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent.DamageCause;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.persistence.PersistentDataType;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
@@ -24,13 +23,11 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
     private final Map<UUID, Map<String, Integer>> damageCounters = new HashMap<>();
     private final Map<UUID, BukkitTask> activeTimers = new HashMap<>();
     private final Map<UUID, String> activeAdaptations = new HashMap<>();
-    private NamespacedKey adaptationKey;
 
     @Override
     public void onEnable() {
-        this.adaptationKey = new NamespacedKey(this, "adaptation_level");
         getServer().getPluginManager().registerEvents(this, this);
-        getLogger().info("Плагин AdaptationPlugin [NBT-FIX] успешно запущен!");
+        getLogger().info("Плагин AdaptationPlugin [LORE-BASED] успешно запущен!");
     }
 
     @Override
@@ -52,24 +49,34 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
         int totalEnchantLevel = 0;
         int pieceCount = 0;
         
-        // Сканируем броню строго на наличие NBT-тега без проверки чаров
+        // Сканируем броню по тексту в описании (Lore)
         for (ItemStack armor : player.getInventory().getArmorContents()) {
             if (armor != null && armor.hasItemMeta()) {
-                // Проверяем как новый формат 1.21 (custom_data), так и старый (NBT)
-                Integer level = armor.getItemMeta().getPersistentDataContainer()
-                        .get(adaptationKey, PersistentDataType.INTEGER);
-                
-                if (level != null && level > 0) {
-                    totalEnchantLevel += level;
-                    pieceCount++;
+                ItemMeta meta = armor.getItemMeta();
+                if (meta.hasLore()) {
+                    for (String line : meta.getLore()) {
+                        // Ищем строчку с уровнем адаптации в описании предмета
+                        if (line.contains("Адаптация III")) {
+                            totalEnchantLevel += 3;
+                            pieceCount++;
+                            break;
+                        } else if (line.contains("Адаптация II")) {
+                            totalEnchantLevel += 2;
+                            pieceCount++;
+                            break;
+                        } else if (line.contains("Адаптация I")) {
+                            totalEnchantLevel += 1;
+                            pieceCount++;
+                            break;
+                        }
+                    }
                 }
             }
         }
 
-        // Если предметов с тегом нет — мгновенно выключаемся
         if (pieceCount == 0) return;
 
-        // Если адаптация уже работает — меняем урон
+        // Расчет урона во время активной адаптации
         if (activeAdaptations.containsKey(uuid)) {
             String currentAdaptType = activeAdaptations.get(uuid);
             String incomingType = getDamageType(event.getCause());
@@ -84,7 +91,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
             return; 
         }
 
-        // Накопление опыта ударов
+        // Логика накопления ударов
         String damageType = getDamageType(event.getCause());
         double avgLevel = (double) totalEnchantLevel / pieceCount;
         int requiredHits = Math.max(3, (int) (10 - (avgLevel * 2)));
