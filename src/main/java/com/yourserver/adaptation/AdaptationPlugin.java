@@ -36,7 +36,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
     @Override
     public void onEnable() {
         getServer().getPluginManager().registerEvents(this, this);
-        getLogger().info("Плагин AdaptationPlugin [OPTIMIZED] успешно запущен!");
+        getLogger().info("Плагин AdaptationPlugin [FIXED-COMPILATION] успешно запущен!");
     }
 
     @Override
@@ -45,7 +45,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
         damageCounters.clear(); superDamageCounters.clear(); activeTimers.clear(); activeAdaptations.clear(); superAdaptations.clear(); lastHitTime.clear();
     }
 
-    // 🔨 ПОЛНАЯ ВАНИЛЬНАЯ НАКОВАЛЬНЯ (СКРЕЩИВАНИЕ ЧАРОВ)
+    // 🔨 ПОЛНАЯ ВАНИЛЬНАЯ НАKОВАЛЬНЯ (СKРЕЩИВАНИЕ ЧАРОВ)
     @EventHandler
     public void onAnvilPrepare(PrepareAnvilEvent event) {
         AnvilInventory anvil = event.getInventory();
@@ -68,7 +68,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
         lore.removeIf(l -> l.contains("Адаптация I") || l.contains("Адаптация II") || l.contains("Адаптация III"));
         
         String strLvl = finalLvl == 1 ? "I" : finalLvl == 2 ? "II" : "III";
-        lore.add(ChatColor.PURPLE + "Адаптация " + strLvl);
+        lore.add(ChatColor.LIGHT_PURPLE + "Адаптация " + strLvl);
         
         meta.setLore(lore); result.setItemMeta(meta);
         event.setResult(result); anvil.setRepairCost(5); 
@@ -84,7 +84,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
         return 0;
     }
 
-    // 🛡️ ОБРАБОТКА УРОНА И БАЛАНСА
+    // 🛡️ ОБРАБОТKА УРОНА И БАЛАНСА
     @EventHandler(priority = EventPriority.HIGH)
     public void onPlayerDamage(EntityDamageEvent event) {
         if (!(event.getEntity() instanceof Player)) return;
@@ -98,7 +98,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
         if (pieceCount == 0) return;
 
         String type = getDamageType(event.getCause());
-        if (type.equals("UNKNOWN")) return;
+        if (type.equals("IGNORE")) return;
 
         long now = System.currentTimeMillis();
         boolean isSpam = (now - lastHitTime.getOrDefault(uuid, 0L) < 450);
@@ -171,7 +171,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
                 }
                 player.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(msg)); time--;
             }
-        }.runTaskTimer(this, 0L, 20L));
+        }.runTaskTimer(this, 0L, 20L););
     }
 
     private void playBell(Player player, float pitch, long per) {
@@ -188,8 +188,14 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
 
     private String getDamageType(DamageCause c) {
         if (c == DamageCause.PROJECTILE || c == DamageCause.BLOCK_EXPLOSION || c == DamageCause.ENTITY_EXPLOSION) return "RANGED";
-        if (c == DamageCause.MAGIC || c == DamageCause.POISON || c == DamageCause.WITHER || c == DamageCause.DRAGON_BREATH || c == DamageCause.SONIC_BOOM) return "MAGIC";
-        if (c == DamageCause.UNKNOWN || c == DamageCause.VOID || c == DamageCause.STARVATION || c == DamageCause.CUSTOM) return "UNKNOWN";
+        if (c == DamageCause.MAGIC || c == DamageCause.POISON || c == DamageCause.WITHER || c == DamageCause.DRAGON_BREATH) return "MAGIC";
+        
+        // Защита от ошибок версий: проверяем крик Вардена через текстовое имя причины, если самого класса нет в реестре
+        if (c.name().equals("SONIC_BOOM")) return "MAGIC";
+        
+        // Игнорируем то, от чего броня защищать не должна
+        if (c == DamageCause.VOID || c == DamageCause.STARVATION || c.name().equals("CUSTOM")) return "IGNORE";
+        
         return "MELEE";
     }
 
