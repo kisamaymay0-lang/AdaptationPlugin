@@ -5,6 +5,9 @@ import net.md_5.bungee.api.ChatMessageType;
 import net.md_5.bungee.api.chat.TextComponent;
 import org.bukkit.Material;
 import org.bukkit.Sound;
+import org.bukkit.Particle;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -32,7 +35,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
     @Override
     public void onEnable() {
         getServer().getPluginManager().registerEvents(this, this);
-        getLogger().info("Плагин AdaptationPlugin [SUPER-ADAPTATION] успешно запущен!");
+        getLogger().info("Плагин AdaptationPlugin [GRADIENT-ABSORB-FIX] успешно запущен!");
     }
 
     @Override
@@ -105,19 +108,9 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
                 ItemMeta meta = armor.getItemMeta();
                 if (meta.hasLore()) {
                     for (String line : meta.getLore()) {
-                        if (line.contains("Адаптация III")) {
-                            totalEnchantLevel += 3;
-                            pieceCount++;
-                            break;
-                        } else if (line.contains("Адаптация II")) {
-                            totalEnchantLevel += 2;
-                            pieceCount++;
-                            break;
-                        } else if (line.contains("Адаптация I")) {
-                            totalEnchantLevel += 1;
-                            pieceCount++;
-                            break;
-                        }
+                        if (line.contains("Адаптация III")) { totalEnchantLevel += 3; pieceCount++; break; }
+                        else if (line.contains("Адаптация II")) { totalEnchantLevel += 2; pieceCount++; break; }
+                        else if (line.contains("Адаптация I")) { totalEnchantLevel += 1; pieceCount++; break; }
                     }
                 }
             }
@@ -133,12 +126,15 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
             String currentAdaptType = activeAdaptations.get(uuid);
 
             if (damageType.equals(currentAdaptType)) {
+                // Визуальный эффект поглощения урона (искры)
+                player.getWorld().spawnParticle(Particle.CRIT, player.getLocation().add(0, 1, 0), 5, 0.3, 0.3, 0.3, 0.1);
+
                 if (superAdaptations.getOrDefault(uuid, false)) {
-                    // ПОВЫШЕННАЯ ФАЗА: Намертво режем урон на 80%
-                    event.setDamage(event.getDamage() * 0.20);
+                    // ТВОЙ БАЛАНС: ПОВЫШЕННАЯ ФАЗА — режем ровно на 50%
+                    event.setDamage(event.getDamage() * 0.50);
                 } else {
-                    // ОБЫЧНАЯ ФАЗА: Режем на 50%
-                    double reduction = 1.0 - (pieceCount * 0.125); 
+                    // ТВОЙ БАЛАНС: ОБЫЧНАЯ ФАЗА — режем на 30% (7.5% за шмотку) [stem-calculative-problem-solving]
+                    double reduction = 1.0 - (pieceCount * 0.075); 
                     event.setDamage(event.getDamage() * reduction);
 
                     // Копим 8 ударов для ПОВЫШЕННОЙ фазы
@@ -186,12 +182,13 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
         damageCounters.remove(uuid); 
         superDamageCounters.remove(uuid); 
 
-        playBellSound(player, 0.9f, 20L); // Обычный темп
+        playBellSound(player, 0.9f, 20L); 
 
-        String message = "";
-        if (type.equals("MELEE")) message = ChatColor.RED + "" + ChatColor.BOLD + "АДАПТАЦИЯ К: БЛИЖ. УРОН!";
-        if (type.equals("RANGED")) message = ChatColor.GREEN + "" + ChatColor.BOLD + "АДАПТАЦИЯ К: СНАРЯДАМ!";
-        if (type.equals("MAGIC")) message = ChatColor.LIGHT_PURPLE + "" + ChatColor.BOLD + "АДАПТАЦИЯ К: МАГИИ!";
+        // БЕЛО-ЦВЕТНОЙ ГРАДИЕНТ ДЛЯ ОБЫЧНОЙ АДАПТАЦИИ
+        String message = ChatColor.WHITE + "" + ChatColor.BOLD + "АДАПТАЦИЯ К: ";
+        if (type.equals("MELEE")) message += ChatColor.RED + "" + ChatColor.BOLD + "БЛИЖ. УРОН!";
+        if (type.equals("RANGED")) message += ChatColor.GREEN + "" + ChatColor.BOLD + "СНАРЯДАМ!";
+        if (type.equals("MAGIC")) message += ChatColor.LIGHT_PURPLE + "" + ChatColor.BOLD + "МАГИИ!";
 
         startActionBarTimer(player, message, durationSeconds);
     }
@@ -206,14 +203,18 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
         superAdaptations.put(uuid, true); 
         superDamageCounters.remove(uuid);
 
-        playBellSound(player, 1.4f, 15L); // Ускоренный набат тревоги
+        // ВЫДАЕМ 4 ЗОЛОТЫХ СЕРДЦА (Эффект поглощения II на 8 секунд) [stem-calculative-problem-solving]
+        player.addPotionEffect(new PotionEffect(PotionEffectType.ABSORPTION, 8 * 20, 1, false, false, true));
 
-        String message = "";
-        if (type.equals("MELEE")) message = ChatColor.DARK_RED + "" + ChatColor.UNDERLINE + "" + ChatColor.BOLD + "ПОВЫШЕННАЯ АДАПТАЦИЯ К: БЛИЖ. УРОН!";
-        if (type.equals("RANGED")) message = ChatColor.DARK_GREEN + "" + ChatColor.UNDERLINE + "" + ChatColor.BOLD + "ПОВЫШЕННАЯ АДАПТАЦИЯ К: СНАРЯДАМ!";
-        if (type.equals("MAGIC")) message = ChatColor.DARK_PURPLE + "" + ChatColor.UNDERLINE + "" + ChatColor.BOLD + "ПОВЫШЕННАЯ АДАПТАЦИЯ К: МАГИИ!";
+        playBellSound(player, 1.4f, 15L); 
 
-        startActionBarTimer(player, message, 8); // Повышенная всегда идет 8 секунд
+        // БЕЛО-ЦВЕТНОЙ ГРАДИЕНТ ДЛЯ ПОВЫШЕННОЙ АДАПТАЦИИ
+        String message = ChatColor.WHITE + "" + ChatColor.UNDERLINE + "" + ChatColor.BOLD + "ПОВЫШ. АДАПТАЦИЯ К: ";
+        if (type.equals("MELEE")) message += ChatColor.DARK_RED + "" + ChatColor.UNDERLINE + "" + ChatColor.BOLD + "БЛИЖ. УРОН!";
+        if (type.equals("RANGED")) message += ChatColor.DARK_GREEN + "" + ChatColor.UNDERLINE + "" + ChatColor.BOLD + "СНАРЯДАМ!";
+        if (type.equals("MAGIC")) message += ChatColor.DARK_PURPLE + "" + ChatColor.UNDERLINE + "" + ChatColor.BOLD + "МАГИИ!";
+
+        startActionBarTimer(player, message, 8); 
     }
 
     private void startActionBarTimer(Player player, String msg, int seconds) {
@@ -250,10 +251,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
             int bellCount = 1;
             @Override
             public void run() {
-                if (!player.isOnline() || bellCount >= 3) {
-                    cancel(); 
-                    return;
-                }
+                if (!player.isOnline() || bellCount >= 3) { cancel(); return; }
                 player.playSound(player.getLocation(), Sound.BLOCK_BELL_USE, 3.0f, pitch);
                 bellCount++;
             }
@@ -262,48 +260,20 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
 
     private String getDamageType(DamageCause cause) {
         switch (cause) {
-            case PROJECTILE:
-            case BLOCK_EXPLOSION:
-            case ENTITY_EXPLOSION:
-                return "RANGED"; 
-
-            case MAGIC:
-            case POISON:
-            case WITHER:
-            case DRAGON_BREATH:
-            case SONIC_BOOM:
-                return "MAGIC";  
-
-            case ENTITY_ATTACK:
-            case ENTITY_SWEEP_ATTACK:
-            case LAVA:
-            case FIRE:
-            case FIRE_TICK:
-            case CONTACT: 
-            case FALL: 
-            case FLY_INTO_WALL: 
-            case SUFFOCATION: 
-            case DROWNING: 
-            case HOT_FLOOR: 
-            case FREEZE: 
-            case THORNS: 
-                return "MELEE";
-
-            default:
-                return "UNKNOWN";  
+            case PROJECTILE: case BLOCK_EXPLOSION: case ENTITY_EXPLOSION: return "RANGED"; 
+            case MAGIC: case POISON: case WITHER: case DRAGON_BREATH: case SONIC_BOOM: return "MAGIC";  
+            case ENTITY_ATTACK: case ENTITY_SWEEP_ATTACK: case LAVA: case FIRE: case FIRE_TICK:
+            case CONTACT: case FALL: case FLY_INTO_WALL: case SUFFOCATION: case DROWNING: 
+            case HOT_FLOOR: case FREEZE: case THORNS: return "MELEE";
+            default: return "UNKNOWN";  
         }
     }
 
     @EventHandler
     public void onQuit(org.bukkit.event.player.PlayerQuitEvent event) {
         UUID uuid = event.getPlayer().getUniqueId();
-        damageCounters.remove(uuid);
-        superDamageCounters.remove(uuid);
-        activeAdaptations.remove(uuid);
-        superAdaptations.remove(uuid);
-        if (activeTimers.containsKey(uuid)) {
-            activeTimers.get(uuid).cancel();
-            activeTimers.remove(uuid);
-        }
+        damageCounters.remove(uuid); superDamageCounters.remove(uuid);
+        activeAdaptations.remove(uuid); superAdaptations.remove(uuid);
+        if (activeTimers.containsKey(uuid)) { activeTimers.get(uuid).cancel(); activeTimers.remove(uuid); }
     }
 }
