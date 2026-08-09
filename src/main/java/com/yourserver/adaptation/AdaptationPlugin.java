@@ -24,13 +24,15 @@ import java.util.*;
 public class AdaptationPlugin extends JavaPlugin implements Listener {
 
     private final Map<UUID, Map<String, Integer>> damageCounters = new HashMap<>();
+    private final Map<UUID, Map<String, Integer>> superDamageCounters = new HashMap<>(); 
     private final Map<UUID, BukkitTask> activeTimers = new HashMap<>();
     private final Map<UUID, String> activeAdaptations = new HashMap<>();
+    private final Map<UUID, Boolean> superAdaptations = new HashMap<>(); 
 
     @Override
     public void onEnable() {
         getServer().getPluginManager().registerEvents(this, this);
-        getLogger().info("Плагин AdaptationPlugin [ANVIL & NEW MATH] успешно запущен!");
+        getLogger().info("Плагин AdaptationPlugin [SUPER-ADAPTATION] успешно запущен!");
     }
 
     @Override
@@ -39,20 +41,21 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
             task.cancel();
         }
         damageCounters.clear();
+        superDamageCounters.clear();
         activeTimers.clear();
         activeAdaptations.clear();
+        superAdaptations.clear();
     }
 
-    // 🔨 МЕХАНИКА НАКОВАЛЬНИ ДЛЯ КНИГ С АДАПТАЦИЕЙ
+    // 🔨 МЕХАНИКА НАКОВАЛЬНИ
     @EventHandler
     public void onAnvilPrepare(PrepareAnvilEvent event) {
         AnvilInventory anvil = event.getInventory();
-        ItemStack leftItem = anvil.getItem(0); // Броня
-        ItemStack rightItem = anvil.getItem(1); // Книга зачарования
+        ItemStack leftItem = anvil.getItem(0); 
+        ItemStack rightItem = anvil.getItem(1); 
 
         if (leftItem == null || rightItem == null) return;
 
-        // Проверяем, что первый предмет — броня, а второй — книга зачарования
         if (!leftItem.getType().name().contains("HELMET") &&
             !leftItem.getType().name().contains("CHESTPLATE") &&
             !leftItem.getType().name().contains("LEGGINGS") &&
@@ -63,7 +66,6 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
         ItemMeta bookMeta = rightItem.getItemMeta();
         if (bookMeta == null || !bookMeta.hasLore()) return;
 
-        // Ищем уровень адаптации в книге
         String foundEnchant = null;
         for (String line : bookMeta.getLore()) {
             if (line.contains("Адаптация I") || line.contains("Адаптация II") || line.contains("Адаптация III")) {
@@ -74,25 +76,21 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
 
         if (foundEnchant == null) return;
 
-        // Создаем результат скрещивания
         ItemStack result = leftItem.clone();
         ItemMeta resultMeta = result.getItemMeta();
         if (resultMeta == null) return;
 
         List<String> lore = resultMeta.hasLore() ? resultMeta.getLore() : new ArrayList<>();
-        
-        // Очищаем старые уровни адаптации на броне, если они были, чтобы заменить на новый
         lore.removeIf(line -> line.contains("Адаптация I") || line.contains("Адаптация II") || line.contains("Адаптация III"));
-        lore.add(foundEnchant); // Добавляем новый уровень из книги
+        lore.add(foundEnchant); 
         
         resultMeta.setLore(lore);
         result.setItemMeta(resultMeta);
 
-        // Устанавливаем результат в наковальню и цену в 5 уровней опыта
         event.setResult(result);
-        anvil.setRepairCost(4); 
+        anvil.setRepairCost(5); 
     }
-
+    // 🛡️ РАСЧЕТ УРОНА И НАКОПЛЕНИЯ
     @EventHandler(priority = EventPriority.HIGH)
     public void onPlayerDamage(EntityDamageEvent event) {
         if (!(event.getEntity() instanceof Player)) return;
@@ -127,35 +125,49 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
 
         if (pieceCount == 0) return;
 
+        String damageType = getDamageType(event.getCause());
+        if (damageType.equals("UNKNOWN")) return;
+
+        // Если любая адаптация уже работает
         if (activeAdaptations.containsKey(uuid)) {
             String currentAdaptType = activeAdaptations.get(uuid);
-            String incomingType = getDamageType(event.getCause());
 
-            if (incomingType.equals(currentAdaptType)) {
-                double reduction = 1.0 - (pieceCount * 0.125); 
-                event.setDamage(event.getDamage() * reduction);
+            if (damageType.equals(currentAdaptType)) {
+                if (superAdaptations.getOrDefault(uuid, false)) {
+                    // ПОВЫШЕННАЯ ФАЗА: Намертво режем урон на 80%
+                    event.setDamage(event.getDamage() * 0.20);
+                } else {
+                    // ОБЫЧНАЯ ФАЗА: Режем на 50%
+                    double reduction = 1.0 - (pieceCount * 0.125); 
+                    event.setDamage(event.getDamage() * reduction);
+
+                    // Копим 8 ударов для ПОВЫШЕННОЙ фазы
+                    superDamageCounters.putIfAbsent(uuid, new HashMap<>());
+                    Map<String, Integer> sCounters = superDamageCounters.get(uuid);
+                    int sHits = sCounters.getOrDefault(damageType, 0) + 1;
+                    sCounters.put(damageType, sHits);
+
+                    if (sHits >= 8) {
+                        activateSuperAdaptation(player, damageType);
+                    }
+                }
             } else {
+                // Штраф: урон не совпал (+10% за вещь)
                 double penalty = 1.0 + (pieceCount * 0.10);
                 event.setDamage(event.getDamage() * penalty);
             }
             return; 
         }
 
-        String damageType = getDamageType(event.getCause());
-        if (damageType.equals("UNKNOWN")) return;
-
+        // Обычное накопление (10-8-6)
         double avgLevel = (double) totalEnchantLevel / pieceCount;
-
-        // 🧮 НОВАЯ МАТЕМАТИКА УРОВНЕЙ С ТВОЕГО СКРИНШОТА
-        int requiredHits = 6;
-        int durationSeconds = 8;
+        int requiredHits = 10;
+        int durationSeconds = 10;
 
         if (avgLevel > 1.0 && avgLevel <= 2.0) {
-            requiredHits = 10;
-            durationSeconds = 16;
-        } else if (avgLevel > 2.0) {
             requiredHits = 8;
-            durationSeconds = 16;
+        } else if (avgLevel > 2.0) {
+            requiredHits = 6;
         }
 
         damageCounters.putIfAbsent(uuid, new HashMap<>());
@@ -172,37 +184,50 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
         UUID uuid = player.getUniqueId();
         activeAdaptations.put(uuid, type);
         damageCounters.remove(uuid); 
+        superDamageCounters.remove(uuid); 
 
-        player.playSound(player.getLocation(), Sound.BLOCK_BELL_USE, 3.0f, 0.9f); 
-
-        new BukkitRunnable() {
-            int bellCount = 1;
-
-            @Override
-            public void run() {
-                if (!player.isOnline() || bellCount >= 3 || !activeAdaptations.containsKey(uuid)) {
-                    cancel(); 
-                    return;
-                }
-                player.playSound(player.getLocation(), Sound.BLOCK_BELL_USE, 3.0f, 0.9f);
-                bellCount++;
-            }
-        }.runTaskTimer(this, 20L, 20L); 
+        playBellSound(player, 0.9f, 20L); // Обычный темп
 
         String message = "";
         if (type.equals("MELEE")) message = ChatColor.RED + "" + ChatColor.BOLD + "АДАПТАЦИЯ К: БЛИЖ. УРОН!";
         if (type.equals("RANGED")) message = ChatColor.GREEN + "" + ChatColor.BOLD + "АДАПТАЦИЯ К: СНАРЯДАМ!";
         if (type.equals("MAGIC")) message = ChatColor.LIGHT_PURPLE + "" + ChatColor.BOLD + "АДАПТАЦИЯ К: МАГИИ!";
 
-        final String finalMessage = message;
+        startActionBarTimer(player, message, durationSeconds);
+    }
 
+    private void activateSuperAdaptation(Player player, String type) {
+        UUID uuid = player.getUniqueId();
+        
+        if (activeTimers.containsKey(uuid)) {
+            activeTimers.get(uuid).cancel();
+        }
+
+        superAdaptations.put(uuid, true); 
+        superDamageCounters.remove(uuid);
+
+        playBellSound(player, 1.4f, 15L); // Ускоренный набат тревоги
+
+        String message = "";
+        if (type.equals("MELEE")) message = ChatColor.DARK_RED + "" + ChatColor.UNDERLINE + "" + ChatColor.BOLD + "ПОВЫШЕННАЯ АДАПТАЦИЯ К: БЛИЖ. УРОН!";
+        if (type.equals("RANGED")) message = ChatColor.DARK_GREEN + "" + ChatColor.UNDERLINE + "" + ChatColor.BOLD + "ПОВЫШЕННАЯ АДАПТАЦИЯ К: СНАРЯДАМ!";
+        if (type.equals("MAGIC")) message = ChatColor.DARK_PURPLE + "" + ChatColor.UNDERLINE + "" + ChatColor.BOLD + "ПОВЫШЕННАЯ АДАПТАЦИЯ К: МАГИИ!";
+
+        startActionBarTimer(player, message, 8); // Повышенная всегда идет 8 секунд
+    }
+
+    private void startActionBarTimer(Player player, String msg, int seconds) {
+        UUID uuid = player.getUniqueId();
+        
         BukkitTask timerTask = new BukkitRunnable() {
-            int timeLeft = durationSeconds;
+            int timeLeft = seconds;
 
             @Override
             public void run() {
                 if (!player.isOnline() || timeLeft <= 0) {
                     activeAdaptations.remove(uuid);
+                    superAdaptations.remove(uuid);
+                    superDamageCounters.remove(uuid);
                     activeTimers.remove(uuid);
                     if (player.isOnline()) {
                         player.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent("")); 
@@ -211,12 +236,28 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
                     return;
                 }
 
-                player.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(finalMessage));
+                player.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(msg));
                 timeLeft--;
             }
         }.runTaskTimer(this, 0L, 20L);
 
         activeTimers.put(uuid, timerTask);
+    }
+
+    private void playBellSound(Player player, float pitch, long period) {
+        player.playSound(player.getLocation(), Sound.BLOCK_BELL_USE, 3.0f, pitch); 
+        new BukkitRunnable() {
+            int bellCount = 1;
+            @Override
+            public void run() {
+                if (!player.isOnline() || bellCount >= 3) {
+                    cancel(); 
+                    return;
+                }
+                player.playSound(player.getLocation(), Sound.BLOCK_BELL_USE, 3.0f, pitch);
+                bellCount++;
+            }
+        }.runTaskTimer(this, period, period);
     }
 
     private String getDamageType(DamageCause cause) {
@@ -257,11 +298,12 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
     public void onQuit(org.bukkit.event.player.PlayerQuitEvent event) {
         UUID uuid = event.getPlayer().getUniqueId();
         damageCounters.remove(uuid);
+        superDamageCounters.remove(uuid);
         activeAdaptations.remove(uuid);
+        superAdaptations.remove(uuid);
         if (activeTimers.containsKey(uuid)) {
             activeTimers.get(uuid).cancel();
             activeTimers.remove(uuid);
         }
     }
 }
-
