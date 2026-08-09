@@ -27,7 +27,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
     @Override
     public void onEnable() {
         getServer().getPluginManager().registerEvents(this, this);
-        getLogger().info("Плагин AdaptationPlugin [50%-FIX] успешно запущен!");
+        getLogger().info("Плагин AdaptationPlugin [BELL-SOUND-FIX] успешно запущен!");
     }
 
     @Override
@@ -40,7 +40,6 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
         activeAdaptations.clear();
     }
 
-    // ВАЖНО: Меняем событие на EntityDamageEvent, чтобы ловить ЛАВУ, ПАДЕНИЕ и ВСЕ типы урона!
     @EventHandler(priority = EventPriority.HIGH)
     public void onPlayerDamage(EntityDamageEvent event) {
         if (!(event.getEntity() instanceof Player)) return;
@@ -50,7 +49,6 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
         int totalEnchantLevel = 0;
         int pieceCount = 0;
         
-        // Проверка брони по тексту Lore
         for (ItemStack armor : player.getInventory().getArmorContents()) {
             if (armor != null && armor.hasItemMeta()) {
                 ItemMeta meta = armor.getItemMeta();
@@ -76,27 +74,21 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
 
         if (pieceCount == 0) return;
 
-        // Если адаптация уже работает — режем урон ровно ВДВОЕ на фулл-сете
         if (activeAdaptations.containsKey(uuid)) {
             String currentAdaptType = activeAdaptations.get(uuid);
             String incomingType = getDamageType(event.getCause());
 
             if (incomingType.equals(currentAdaptType)) {
-                // Защита: 12.5% за каждый предмет. 4 предмета = 50% (урон срезается вдвое) [stem-calculative-problem-solving]
                 double reduction = 1.0 - (pieceCount * 0.125); 
                 event.setDamage(event.getDamage() * reduction);
             } else {
-                // Штраф: урон не совпал -> получаем на 10% больше за каждый предмет
                 double penalty = 1.0 + (pieceCount * 0.10);
                 event.setDamage(event.getDamage() * penalty);
             }
             return; 
         }
 
-        // Логика накопления ударов
         String damageType = getDamageType(event.getCause());
-        
-        // Безопасность: игнорируем типы урона, которые не входят в категории (например, голодание или пустота)
         if (damageType.equals("UNKNOWN")) return;
 
         double avgLevel = (double) totalEnchantLevel / pieceCount;
@@ -117,9 +109,27 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
         activeAdaptations.put(uuid, type);
         damageCounters.remove(uuid); 
 
-        player.playSound(player.getLocation(), Sound.BLOCK_AMETHYST_BLOCK_CHIME, 1.0f, 1.0f);
-        player.playSound(player.getLocation(), Sound.ITEM_SHIELD_BLOCK, 0.8f, 0.5f);
+        // 🔔 ТРОЙНОЙ ЗВОН КОЛОКОЛА С ИНТЕРВАЛОМ В 1 СЕКУНДУ (Громкость 3.0)
+        // 1-й удар: звучит мгновенно в момент включения
+        player.playSound(player.getLocation(), Sound.BLOCK_BELL_USE, 3.0f, 0.9f); 
 
+        new BukkitRunnable() {
+            int bellCount = 1;
+
+            @Override
+            public void run() {
+                if (!player.isOnline() || bellCount >= 3 || !activeAdaptations.containsKey(uuid)) {
+                    cancel(); // Отключаем таймер колокола, если игрок ливнул или эффект досрочно спал
+                    return;
+                }
+                
+                // 2-й и 3-й удары: проигрываются каждый тик этого шедулера
+                player.playSound(player.getLocation(), Sound.BLOCK_BELL_USE, 3.0f, 0.9f);
+                bellCount++;
+            }
+        }.runTaskTimer(this, 20L, 20L); // 20 тиков задержка перед стартом (1 сек), и повтор каждые 20 тиков (1 сек)
+
+        // Настройка сообщения в экшн-баре
         String message = "";
         if (type.equals("MELEE")) message = ChatColor.RED + "" + ChatColor.BOLD + "АДАПТАЦИЯ К: БЛИЖ. УРОН!";
         if (type.equals("RANGED")) message = ChatColor.GREEN + "" + ChatColor.BOLD + "АДАПТАЦИЯ К: СНАРЯДАМ!";
@@ -151,40 +161,35 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
         activeTimers.put(uuid, timerTask);
     }
 
-    // Распределяем абсолютно ВСЕ ванильные источники урона Майнкрафта
     private String getDamageType(DamageCause cause) {
         switch (cause) {
-            // 🏹 СНАРЯДЫ И ВЗРЫВЫ
             case PROJECTILE:
             case BLOCK_EXPLOSION:
             case ENTITY_EXPLOSION:
                 return "RANGED"; 
 
-            // 🧪 МАГИЯ И ЗЕЛЬЯ
             case MAGIC:
             case POISON:
             case WITHER:
             case DRAGON_BREATH:
-            case SONIC_BOOM: // Крик Вардена
+            case SONIC_BOOM:
                 return "MAGIC";  
 
-            // ⚔️ БЛИЖНИЙ УРОН, ЛАВА, ОКРУЖЕНИЕ
             case ENTITY_ATTACK:
             case ENTITY_SWEEP_ATTACK:
             case LAVA:
             case FIRE:
             case FIRE_TICK:
-            case CONTACT: // Кактусы / Ягоды
-            case FALL: // Падение с высоты
-            case FLY_INTO_WALL: // Элитры
-            case SUFFOCATION: // Задохнулся в стене
-            case DROWNING: // Утонул
-            case HOT_FLOOR: // Магма-блок
-            case FREEZE: // Рыхлый снег
-            case THORNS: // Чары шипов
+            case CONTACT: 
+            case FALL: 
+            case FLY_INTO_WALL: 
+            case SUFFOCATION: 
+            case DROWNING: 
+            case HOT_FLOOR: 
+            case FREEZE: 
+            case THORNS: 
                 return "MELEE";
 
-            // Игнорируем то, от чего броня спасать не должна (команды, бездна, голод)
             default:
                 return "UNKNOWN";  
         }
