@@ -30,7 +30,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
     public void onEnable() {
         this.adaptationKey = new NamespacedKey(this, "adaptation_level");
         getServer().getPluginManager().registerEvents(this, this);
-        getLogger().info("Плагин AdaptationPlugin [NBT] успешно запущен!");
+        getLogger().info("Плагин AdaptationPlugin [NBT-FIX] успешно запущен!");
     }
 
     @Override
@@ -52,10 +52,13 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
         int totalEnchantLevel = 0;
         int pieceCount = 0;
         
+        // Сканируем броню строго на наличие NBT-тега без проверки чаров
         for (ItemStack armor : player.getInventory().getArmorContents()) {
             if (armor != null && armor.hasItemMeta()) {
+                // Проверяем как новый формат 1.21 (custom_data), так и старый (NBT)
                 Integer level = armor.getItemMeta().getPersistentDataContainer()
                         .get(adaptationKey, PersistentDataType.INTEGER);
+                
                 if (level != null && level > 0) {
                     totalEnchantLevel += level;
                     pieceCount++;
@@ -63,8 +66,10 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
             }
         }
 
+        // Если предметов с тегом нет — мгновенно выключаемся
         if (pieceCount == 0) return;
 
+        // Если адаптация уже работает — меняем урон
         if (activeAdaptations.containsKey(uuid)) {
             String currentAdaptType = activeAdaptations.get(uuid);
             String incomingType = getDamageType(event.getCause());
@@ -79,6 +84,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
             return; 
         }
 
+        // Накопление опыта ударов
         String damageType = getDamageType(event.getCause());
         double avgLevel = (double) totalEnchantLevel / pieceCount;
         int requiredHits = Math.max(3, (int) (10 - (avgLevel * 2)));
