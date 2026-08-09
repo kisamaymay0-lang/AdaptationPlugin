@@ -1,0 +1,6 @@
+name: AdaptationPlugin
+version: 1.0
+main: com.yourserver.adaptation.AdaptationPlugin
+api-version: '1.21'
+author: furrer9
+description: писька
