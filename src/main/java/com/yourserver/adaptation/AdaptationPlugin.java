@@ -3,6 +3,7 @@ package com.yourserver.adaptation;
 import net.md_5.bungee.api.ChatColor;
 import net.md_5.bungee.api.ChatMessageType;
 import net.md_5.bungee.api.chat.TextComponent;
+import org.bukkit.Material;
 import org.bukkit.Sound;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -10,6 +11,8 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDamageEvent.DamageCause;
+import org.bukkit.event.inventory.PrepareAnvilEvent;
+import org.bukkit.inventory.AnvilInventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -27,7 +30,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
     @Override
     public void onEnable() {
         getServer().getPluginManager().registerEvents(this, this);
-        getLogger().info("Плагин AdaptationPlugin [BELL-SOUND-FIX] успешно запущен!");
+        getLogger().info("Плагин AdaptationPlugin [ANVIL & NEW MATH] успешно запущен!");
     }
 
     @Override
@@ -38,6 +41,56 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
         damageCounters.clear();
         activeTimers.clear();
         activeAdaptations.clear();
+    }
+
+    // 🔨 МЕХАНИКА НАКОВАЛЬНИ ДЛЯ КНИГ С АДАПТАЦИЕЙ
+    @EventHandler
+    public void onAnvilPrepare(PrepareAnvilEvent event) {
+        AnvilInventory anvil = event.getInventory();
+        ItemStack leftItem = anvil.getItem(0); // Броня
+        ItemStack rightItem = anvil.getItem(1); // Книга зачарования
+
+        if (leftItem == null || rightItem == null) return;
+
+        // Проверяем, что первый предмет — броня, а второй — книга зачарования
+        if (!leftItem.getType().name().contains("HELMET") &&
+            !leftItem.getType().name().contains("CHESTPLATE") &&
+            !leftItem.getType().name().contains("LEGGINGS") &&
+            !leftItem.getType().name().contains("BOOTS")) return;
+
+        if (rightItem.getType() != Material.ENCHANTED_BOOK) return;
+
+        ItemMeta bookMeta = rightItem.getItemMeta();
+        if (bookMeta == null || !bookMeta.hasLore()) return;
+
+        // Ищем уровень адаптации в книге
+        String foundEnchant = null;
+        for (String line : bookMeta.getLore()) {
+            if (line.contains("Адаптация I") || line.contains("Адаптация II") || line.contains("Адаптация III")) {
+                foundEnchant = line;
+                break;
+            }
+        }
+
+        if (foundEnchant == null) return;
+
+        // Создаем результат скрещивания
+        ItemStack result = leftItem.clone();
+        ItemMeta resultMeta = result.getItemMeta();
+        if (resultMeta == null) return;
+
+        List<String> lore = resultMeta.hasLore() ? resultMeta.getLore() : new ArrayList<>();
+        
+        // Очищаем старые уровни адаптации на броне, если они были, чтобы заменить на новый
+        lore.removeIf(line -> line.contains("Адаптация I") || line.contains("Адаптация II") || line.contains("Адаптация III"));
+        lore.add(foundEnchant); // Добавляем новый уровень из книги
+        
+        resultMeta.setLore(lore);
+        result.setItemMeta(resultMeta);
+
+        // Устанавливаем результат в наковальню и цену в 5 уровней опыта
+        event.setResult(result);
+        anvil.setRepairCost(4); 
     }
 
     @EventHandler(priority = EventPriority.HIGH)
@@ -92,7 +145,18 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
         if (damageType.equals("UNKNOWN")) return;
 
         double avgLevel = (double) totalEnchantLevel / pieceCount;
-        int requiredHits = Math.max(3, (int) (10 - (avgLevel * 2)));
+
+        // 🧮 НОВАЯ МАТЕМАТИКА УРОВНЕЙ С ТВОЕГО СКРИНШОТА
+        int requiredHits = 6;
+        int durationSeconds = 8;
+
+        if (avgLevel > 1.0 && avgLevel <= 2.0) {
+            requiredHits = 10;
+            durationSeconds = 16;
+        } else if (avgLevel > 2.0) {
+            requiredHits = 8;
+            durationSeconds = 16;
+        }
 
         damageCounters.putIfAbsent(uuid, new HashMap<>());
         Map<String, Integer> pCounters = damageCounters.get(uuid);
@@ -100,17 +164,15 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
         pCounters.put(damageType, currentHits);
 
         if (currentHits >= requiredHits) {
-            activateAdaptation(player, damageType, avgLevel);
+            activateAdaptation(player, damageType, durationSeconds);
         }
     }
 
-    private void activateAdaptation(Player player, String type, double avgLevel) {
+    private void activateAdaptation(Player player, String type, int durationSeconds) {
         UUID uuid = player.getUniqueId();
         activeAdaptations.put(uuid, type);
         damageCounters.remove(uuid); 
 
-        // 🔔 ТРОЙНОЙ ЗВОН КОЛОКОЛА С ИНТЕРВАЛОМ В 1 СЕКУНДУ (Громкость 3.0)
-        // 1-й удар: звучит мгновенно в момент включения
         player.playSound(player.getLocation(), Sound.BLOCK_BELL_USE, 3.0f, 0.9f); 
 
         new BukkitRunnable() {
@@ -119,24 +181,20 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
             @Override
             public void run() {
                 if (!player.isOnline() || bellCount >= 3 || !activeAdaptations.containsKey(uuid)) {
-                    cancel(); // Отключаем таймер колокола, если игрок ливнул или эффект досрочно спал
+                    cancel(); 
                     return;
                 }
-                
-                // 2-й и 3-й удары: проигрываются каждый тик этого шедулера
                 player.playSound(player.getLocation(), Sound.BLOCK_BELL_USE, 3.0f, 0.9f);
                 bellCount++;
             }
-        }.runTaskTimer(this, 20L, 20L); // 20 тиков задержка перед стартом (1 сек), и повтор каждые 20 тиков (1 сек)
+        }.runTaskTimer(this, 20L, 20L); 
 
-        // Настройка сообщения в экшн-баре
         String message = "";
         if (type.equals("MELEE")) message = ChatColor.RED + "" + ChatColor.BOLD + "АДАПТАЦИЯ К: БЛИЖ. УРОН!";
         if (type.equals("RANGED")) message = ChatColor.GREEN + "" + ChatColor.BOLD + "АДАПТАЦИЯ К: СНАРЯДАМ!";
         if (type.equals("MAGIC")) message = ChatColor.LIGHT_PURPLE + "" + ChatColor.BOLD + "АДАПТАЦИЯ К: МАГИИ!";
 
         final String finalMessage = message;
-        int durationSeconds = Math.max(4, (int) (20 - (avgLevel * 4)));
 
         BukkitTask timerTask = new BukkitRunnable() {
             int timeLeft = durationSeconds;
@@ -206,3 +264,4 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
         }
     }
 }
+
