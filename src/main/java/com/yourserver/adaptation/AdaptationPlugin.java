@@ -36,7 +36,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
     @Override
     public void onEnable() {
         getServer().getPluginManager().registerEvents(this, this);
-        getLogger().info("Плагин AdaptationPlugin [FIXED-COMPILATION] успешно запущен!");
+        getLogger().info("Плагин AdaptationPlugin [FIXED-FINAL] успешно запущен!");
     }
 
     @Override
@@ -45,7 +45,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
         damageCounters.clear(); superDamageCounters.clear(); activeTimers.clear(); activeAdaptations.clear(); superAdaptations.clear(); lastHitTime.clear();
     }
 
-    // 🔨 ПОЛНАЯ ВАНИЛЬНАЯ НАKОВАЛЬНЯ (СKРЕЩИВАНИЕ ЧАРОВ)
+    // 🔨 ПОЛНАЯ ВАНИЛЬНАЯ НАКОВАЛЬНЯ (СКРЕЩИВАНИЕ ЧАРОВ)
     @EventHandler
     public void onAnvilPrepare(PrepareAnvilEvent event) {
         AnvilInventory anvil = event.getInventory();
@@ -84,7 +84,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
         return 0;
     }
 
-    // 🛡️ ОБРАБОТKА УРОНА И БАЛАНСА
+    // 🛡️ ОБРАБОТКА УРОНА И БАЛАНСА
     @EventHandler(priority = EventPriority.HIGH)
     public void onPlayerDamage(EntityDamageEvent event) {
         if (!(event.getEntity() instanceof Player)) return;
@@ -171,7 +171,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
                 }
                 player.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(msg)); time--;
             }
-        }.runTaskTimer(this, 0L, 20L););
+        }.runTaskTimer(this, 0L, 20L));
     }
 
     private void playBell(Player player, float pitch, long per) {
@@ -189,13 +189,8 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
     private String getDamageType(DamageCause c) {
         if (c == DamageCause.PROJECTILE || c == DamageCause.BLOCK_EXPLOSION || c == DamageCause.ENTITY_EXPLOSION) return "RANGED";
         if (c == DamageCause.MAGIC || c == DamageCause.POISON || c == DamageCause.WITHER || c == DamageCause.DRAGON_BREATH) return "MAGIC";
-        
-        // Защита от ошибок версий: проверяем крик Вардена через текстовое имя причины, если самого класса нет в реестре
         if (c.name().equals("SONIC_BOOM")) return "MAGIC";
-        
-        // Игнорируем то, от чего броня защищать не должна
         if (c == DamageCause.VOID || c == DamageCause.STARVATION || c.name().equals("CUSTOM")) return "IGNORE";
-        
         return "MELEE";
     }
 
