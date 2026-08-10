@@ -53,7 +53,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         if (getCommand("adaptation") != null) {
             getCommand("adaptation").setExecutor(this);
         }
-        getLogger().info("Плагин AdaptationPlugin [TIMER-BONUS] успешно запущен!");
+        getLogger().info("Плагин AdaptationPlugin [FIXED-ANVIL] успешно запущен!");
     }
 
     @Override
@@ -126,23 +126,41 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
 
         if (lvlLeft == 0 && lvlRight == 0) return;
 
-        if (left.getType() == Material.ENCHANTED_BOOK && right.getType() == Material.ENCHANTED_BOOK) {
-            if (lvlLeft == 0 || lvlRight == 0) {
+        if (lvlRight > 0) {
+            if (right.getType() != Material.ENCHANTED_BOOK) {
                 event.setResult(null);
                 anvil.setRepairCost(41);
                 return;
+            }
+            if (right.hasItemMeta() && right.getItemMeta() instanceof EnchantmentStorageMeta) {
+                EnchantmentStorageMeta esm = (EnchantmentStorageMeta) right.getItemMeta();
+                if (esm.hasStoredEnchants() && esm.getStoredEnchants().size() > 1) {
+                    event.setResult(null);
+                    anvil.setRepairCost(41);
+                    return;
+                }
             }
         }
 
-        if (left.getType() != Material.ENCHANTED_BOOK && right.getType() == Material.ENCHANTED_BOOK) {
-            String type = left.getType().name();
-            boolean isArmor = type.contains("HELMET") || type.contains("CHESTPLATE") || type.contains("LEGGINGS") || type.contains("BOOTS");
-            if (!isArmor || lvlRight == 0) {
-                event.setResult(null);
-                anvil.setRepairCost(41);
-                return;
+        if (lvlLeft > 0 || lvlRight > 0) {
+            if (left.getType() == Material.ENCHANTED_BOOK && right.getType() == Material.ENCHANTED_BOOK) {
+                if (lvlLeft == 0 || lvlRight == 0) {
+                    event.setResult(null);
+                    anvil.setRepairCost(41);
+                    return;
+                }
+            } else if (left.getType() != Material.ENCHANTED_BOOK) {
+                String type = left.getType().name();
+                boolean isArmor = type.contains("HELMET") || type.contains("CHESTPLATE") || type.contains("LEGGINGS") || type.contains("BOOTS");
+                if (!isArmor || (right.getType() == Material.ENCHANTED_BOOK && lvlRight == 0)) {
+                    event.setResult(null);
+                    anvil.setRepairCost(41);
+                    return;
+                }
             }
         }
+
+        if (lvlRight == 0) return;
 
         int finalLvl = (lvlLeft == lvlRight && lvlLeft < 3) ? lvlLeft + 1 : Math.max(lvlLeft, lvlRight);
         
