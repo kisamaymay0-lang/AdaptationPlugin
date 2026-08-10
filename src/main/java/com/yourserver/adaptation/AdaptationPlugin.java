@@ -50,7 +50,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         if (getCommand("adaptation") != null) {
             getCommand("adaptation").setExecutor(this);
         }
-        getLogger().info("Плагин AdaptationPlugin [GLINT-OVERRIDE] успешно запущен!");
+        getLogger().info("Плагин AdaptationPlugin [DYNAMIC-PROTECTION] успешно запущен!");
     }
 
     @Override
@@ -230,17 +230,19 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
                 spawnAdaptationParticles(player, type);
 
                 if (superAdaptations.getOrDefault(uuid, false)) {
-                    event.setDamage(event.getDamage() * 0.50);
+                    double perPieceSuper = getConfig().getDouble("settings.super-protection-per-piece", 0.125);
+                    event.setDamage(event.getDamage() * (1.0 - (pieceCount * perPieceSuper)));
                     
                     if (!isSpam && activeTimesLeft.containsKey(uuid)) {
                         double currentLeft = activeTimesLeft.get(uuid);
                         double maxTime = activeMaxTimes.getOrDefault(uuid, 4.0);
-                        double bonus = getConfig().getDouble("settings.hit-bonus-super", 0.8);
+                        double bonus = getConfig().getDouble("settings.hit-bonus-super", 0.4);
                         double newLeft = Math.min(maxTime, currentLeft + bonus);
                         activeTimesLeft.put(uuid, newLeft);
                     }
                 } else {
-                    event.setDamage(event.getDamage() * (1.0 - (pieceCount * 0.075)));
+                    double perPieceNormal = getConfig().getDouble("settings.normal-protection-per-piece", 0.075);
+                    event.setDamage(event.getDamage() * (1.0 - (pieceCount * perPieceNormal)));
                     
                     if (!isSpam && activeTimesLeft.containsKey(uuid)) {
                         double currentLeft = activeTimesLeft.get(uuid);
@@ -407,3 +409,4 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         if (activeBossBars.containsKey(id)) { activeBossBars.get(id).removeAll(); activeBossBars.remove(id); }
     }
 }
+
