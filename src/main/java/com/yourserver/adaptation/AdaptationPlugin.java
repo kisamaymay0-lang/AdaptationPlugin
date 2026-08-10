@@ -74,13 +74,13 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
             return true;
         }
 
-        if (args.length == 1 && args[0].equalsIgnoreCase("reload")) {
+        if (args.length == 1 && args.equalsIgnoreCase("reload")) {
             reloadConfig();
             sender.sendMessage(ChatColor.GREEN + "Конфигурация AdaptationPlugin успешно перезагружена!");
             return true;
         }
 
-        if (args.length < 3 || !args[0].equalsIgnoreCase("give")) {
+        if (args.length < 3 || !args.equalsIgnoreCase("give")) {
             sender.sendMessage(ChatColor.RED + "Использование: /adaptation give <игрок> <1/2/3> ИЛИ /adaptation reload");
             return true;
         }
@@ -108,7 +108,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
             
             String strLvl = lvl == 1 ? "I" : lvl == 2 ? "II" : "III";
             List<String> lore = new ArrayList<>();
-            lore.add(ChatColor.LIGHT_PURPLE + "Адаптация " + strLvl);
+            lore.add(ChatColor.LIGHT_PURPLE + "" + ChatColor.BOLD + "Адаптация " + strLvl);
             meta.setLore(lore);
             
             meta.addEnchant(Enchantment.LUCK_OF_THE_SEA, 1, true);
@@ -125,24 +125,45 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
     public void onAnvilPrepare(PrepareAnvilEvent event) {
         AnvilInventory anvil = event.getInventory();
         ItemStack left = anvil.getItem(0), right = anvil.getItem(1);
-        if (left == null || right == null || right.getType() != Material.ENCHANTED_BOOK) return;
+        if (left == null || right == null) return;
 
         int lvlLeft = getStoredLvl(left);
         int lvlRight = getStoredLvl(right);
-        if (lvlRight == 0) return;
 
-        if (right.hasItemMeta() && right.getItemMeta() instanceof EnchantmentStorageMeta) {
-            EnchantmentStorageMeta esm = (EnchantmentStorageMeta) right.getItemMeta();
-            if (esm.hasStoredEnchants() && esm.getStoredEnchants().size() > 1) {
+        if (lvlLeft == 0 && lvlRight == 0) return;
+
+        if (lvlRight > 0) {
+            if (right.getType() != Material.ENCHANTED_BOOK) {
                 event.setResult(null);
+                anvil.setRepairCost(41);
                 return;
+            }
+            if (right.hasItemMeta() && right.getItemMeta() instanceof EnchantmentStorageMeta) {
+                EnchantmentStorageMeta esm = (EnchantmentStorageMeta) right.getItemMeta();
+                if (esm.hasStoredEnchants() && esm.getStoredEnchants().size() > 1) {
+                    event.setResult(null);
+                    anvil.setRepairCost(41);
+                    return;
+                }
             }
         }
 
-        String type = left.getType().name();
-        if (!type.contains("HELMET") && !type.contains("CHESTPLATE") && !type.contains("LEGGINGS") && !type.contains("BOOTS") && left.getType() != Material.ENCHANTED_BOOK) {
-            event.setResult(null);
-            return;
+        if (lvlLeft > 0 || lvlRight > 0) {
+            if (left.getType() == Material.ENCHANTED_BOOK && right.getType() == Material.ENCHANTED_BOOK) {
+                if (lvlLeft == 0 || lvlRight == 0) {
+                    event.setResult(null);
+                    anvil.setRepairCost(41);
+                    return;
+                }
+            } else {
+                String type = left.getType().name();
+                boolean isArmor = type.contains("HELMET") || type.contains("CHESTPLATE") || type.contains("LEGGINGS") || type.contains("BOOTS");
+                if (!isArmor || right.getType() != Material.ENCHANTED_BOOK) {
+                    event.setResult(null);
+                    anvil.setRepairCost(41);
+                    return;
+                }
+            }
         }
 
         int finalLvl = (lvlLeft == lvlRight && lvlLeft < 3) ? lvlLeft + 1 : Math.max(lvlLeft, lvlRight);
@@ -157,7 +178,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         lore.removeIf(l -> l.contains("Адаптация"));
         
         String strLvl = finalLvl == 1 ? "I" : finalLvl == 2 ? "II" : "III";
-        lore.add(ChatColor.LIGHT_PURPLE + "Адаптация " + strLvl);
+        lore.add(ChatColor.LIGHT_PURPLE + "" + ChatColor.BOLD + "Адаптация " + strLvl);
         meta.setLore(lore);
 
         if (!meta.hasEnchants()) {
