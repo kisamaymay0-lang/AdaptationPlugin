@@ -27,6 +27,7 @@ import org.bukkit.inventory.AnvilInventory;
 import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.inventory.meta.EnchantmentStorageMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -43,6 +44,8 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
     private final Map<UUID, Boolean> superAdaptations = new HashMap<>(); 
     private final Map<UUID, Long> lastHitTime = new HashMap<>();
     private final Map<UUID, BossBar> activeBossBars = new HashMap<>();
+    private final Map<UUID, Double> activeTimesLeft = new HashMap<>();
+    private final Map<UUID, Double> activeMaxTimes = new HashMap<>();
     
     private NamespacedKey enchantKey;
 
@@ -61,7 +64,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
     public void onDisable() {
         activeTimers.values().forEach(BukkitTask::cancel);
         activeBossBars.values().forEach(BossBar::removeAll);
-        damageCounters.clear(); superDamageCounters.clear(); activeTimers.clear(); activeAdaptations.clear(); superAdaptations.clear(); lastHitTime.clear(); activeBossBars.clear();
+        damageCounters.clear(); superDamageCounters.clear(); activeTimers.clear(); activeAdaptations.clear(); superAdaptations.clear(); lastHitTime.clear(); activeBossBars.clear(); activeTimesLeft.clear(); activeMaxTimes.clear();
     }
 
     @Override
@@ -101,10 +104,11 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         ItemMeta meta = book.getItemMeta();
         if (meta != null) {
             meta.getPersistentDataContainer().set(enchantKey, PersistentDataType.INTEGER, lvl);
+            meta.setDisplayName(ChatColor.AQUA + "Зачарованная книга");
             
             String strLvl = lvl == 1 ? "I" : lvl == 2 ? "II" : "III";
             List<String> lore = new ArrayList<>();
-            lore.add(ChatColor.GRAY + "Адаптация " + strLvl);
+            lore.add(ChatColor.LIGHT_PURPLE + "Адаптация " + strLvl);
             meta.setLore(lore);
             
             meta.addEnchant(Enchantment.LUCK_OF_THE_SEA, 1, true);
@@ -123,12 +127,23 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         ItemStack left = anvil.getItem(0), right = anvil.getItem(1);
         if (left == null || right == null || right.getType() != Material.ENCHANTED_BOOK) return;
 
-        String type = left.getType().name();
-        if (!type.contains("HELMET") && !type.contains("CHESTPLATE") && !type.contains("LEGGINGS") && !type.contains("BOOTS")) return;
-
         int lvlLeft = getStoredLvl(left);
         int lvlRight = getStoredLvl(right);
         if (lvlRight == 0) return;
+
+        if (right.hasItemMeta() && right.getItemMeta() instanceof EnchantmentStorageMeta) {
+            EnchantmentStorageMeta esm = (EnchantmentStorageMeta) right.getItemMeta();
+            if (esm.hasStoredEnchants() && esm.getStoredEnchants().size() > 1) {
+                event.setResult(null);
+                return;
+            }
+        }
+
+        String type = left.getType().name();
+        if (!type.contains("HELMET") && !type.contains("CHESTPLATE") && !type.contains("LEGGINGS") && !type.contains("BOOTS") && left.getType() != Material.ENCHANTED_BOOK) {
+            event.setResult(null);
+            return;
+        }
 
         int finalLvl = (lvlLeft == lvlRight && lvlLeft < 3) ? lvlLeft + 1 : Math.max(lvlLeft, lvlRight);
         
@@ -142,12 +157,16 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         lore.removeIf(l -> l.contains("Адаптация"));
         
         String strLvl = finalLvl == 1 ? "I" : finalLvl == 2 ? "II" : "III";
-        lore.add(ChatColor.GRAY + "Адаптация " + strLvl);
+        lore.add(ChatColor.LIGHT_PURPLE + "Адаптация " + strLvl);
         meta.setLore(lore);
 
         if (!meta.hasEnchants()) {
             meta.addEnchant(Enchantment.LUCK_OF_THE_SEA, 1, true);
             meta.addItemFlags(ItemFlag.HIDE_ENCHANTS);
+        }
+
+        if (result.getType() == Material.ENCHANTED_BOOK) {
+            meta.setDisplayName(ChatColor.AQUA + "Зачарованная книга");
         }
 
         result.setItemMeta(meta);
@@ -189,6 +208,13 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
 
                 if (superAdaptations.getOrDefault(uuid, false)) {
                     event.setDamage(event.getDamage() * 0.50);
+                    
+                    if (!isSpam && activeTimesLeft.containsKey(uuid)) {
+                        double currentLeft = activeTimesLeft.get(uuid);
+                        double maxTime = activeMaxTimes.getOrDefault(uuid, 8.0);
+                        double newLeft = Math.min(maxTime, currentLeft + 1.0);
+                        activeTimesLeft.put(uuid, newLeft);
+                    }
                 } else {
                     event.setDamage(event.getDamage() * (1.0 - (pieceCount * 0.075)));
                     if (!isSpam) {
@@ -284,17 +310,19 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         BossBar bossBar = Bukkit.createBossBar(msg, color, BarStyle.SOLID);
         bossBar.addPlayer(player);
         activeBossBars.put(uuid, bossBar);
+        
+        activeTimesLeft.put(uuid, (double) sec);
+        activeMaxTimes.put(uuid, (double) sec);
 
         activeTimers.put(uuid, new BukkitRunnable() {
-            final double maxTime = sec;
-            double timeLeft = sec;
-
             @Override
             public void run() {
                 Player p = Bukkit.getPlayer(uuid);
+                Double timeLeft = activeTimesLeft.get(uuid);
+                Double maxTime = activeMaxTimes.get(uuid);
                 
-                if (p == null || !p.isOnline() || timeLeft <= 0) {
-                    if (p != null && p.isOnline() && timeLeft <= 0) {
+                if (p == null || !p.isOnline() || timeLeft == null || timeLeft <= 0) {
+                    if (p != null && p.isOnline() && (timeLeft == null || timeLeft <= 0)) {
                         p.getWorld().playSound(p.getLocation(), Sound.BLOCK_GLASS_BREAK, 1.0f, 0.8f);
                         p.getWorld().spawnParticle(Particle.SMOKE, p.getLocation().add(0, 1, 0), 10, 0.2, 0.3, 0.2, 0.05);
                     }
@@ -303,6 +331,8 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
                     superAdaptations.remove(uuid); 
                     superDamageCounters.remove(uuid); 
                     activeTimers.remove(uuid);
+                    activeTimesLeft.remove(uuid);
+                    activeMaxTimes.remove(uuid);
                     
                     if (activeBossBars.containsKey(uuid)) {
                         activeBossBars.get(uuid).removeAll();
@@ -313,7 +343,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
                 }
 
                 bossBar.setProgress(timeLeft / maxTime);
-                timeLeft -= 0.05; 
+                activeTimesLeft.put(uuid, timeLeft - 0.05); 
             }
         }.runTaskTimer(this, 0L, 1L));
     }
@@ -346,6 +376,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
     public void onQuit(org.bukkit.event.player.PlayerQuitEvent e) {
         UUID id = e.getPlayer().getUniqueId();
         damageCounters.remove(id); superDamageCounters.remove(id); activeAdaptations.remove(id); superAdaptations.remove(id); lastHitTime.remove(id);
+        activeTimesLeft.remove(id); activeMaxTimes.remove(id);
         if (activeTimers.containsKey(id)) { activeTimers.get(id).cancel(); activeTimers.remove(id); }
         if (activeBossBars.containsKey(id)) { activeBossBars.get(id).removeAll(); activeBossBars.remove(id); }
     }
