@@ -6,12 +6,15 @@ import org.bukkit.Material;
 import org.bukkit.Sound;
 import org.bukkit.Particle;
 import org.bukkit.Color;
+import org.bukkit.NamespacedKey;
 import org.bukkit.boss.BarColor;
 import org.bukkit.boss.BarStyle;
 import org.bukkit.boss.BossBar;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
+import org.bukkit.enchantments.Enchantment;
+import org.bukkit.enchantments.EnchantmentTarget;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.entity.Player;
@@ -23,11 +26,12 @@ import org.bukkit.event.entity.EntityDamageEvent.DamageCause;
 import org.bukkit.event.inventory.PrepareAnvilEvent;
 import org.bukkit.inventory.AnvilInventory;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.inventory.meta.EnchantmentStorageMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 
+import java.lang.reflect.Field;
 import java.util.*;
 
 public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExecutor {
@@ -39,14 +43,18 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
     private final Map<UUID, Boolean> superAdaptations = new HashMap<>(); 
     private final Map<UUID, Long> lastHitTime = new HashMap<>();
     private final Map<UUID, BossBar> activeBossBars = new HashMap<>();
+    
+    public static Enchantment ADAPTATION_ENCHANT;
 
     @Override
     public void onEnable() {
+        saveDefaultConfig();
+        registerCustomEnchantment();
         getServer().getPluginManager().registerEvents(this, this);
         if (getCommand("adaptation") != null) {
             getCommand("adaptation").setExecutor(this);
         }
-        getLogger().info("Плагин AdaptationPlugin [BOSSBAR-UPDATE] успешно запущен!");
+        getLogger().info("Плагин AdaptationPlugin [ENCHANTMENT-API] успешно запущен!");
     }
 
     @Override
@@ -56,6 +64,27 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         damageCounters.clear(); superDamageCounters.clear(); activeTimers.clear(); activeAdaptations.clear(); superAdaptations.clear(); lastHitTime.clear(); activeBossBars.clear();
     }
 
+    private void registerCustomEnchantment() {
+        NamespacedKey key = new NamespacedKey(this, "adaptation");
+        
+        Enchantment existing = Enchantment.getByKey(key);
+        if (existing != null) {
+            ADAPTATION_ENCHANT = existing;
+            return;
+        }
+
+        try {
+            Field acceptingField = Enchantment.class.getDeclaredField("acceptingNew");
+            acceptingField.setAccessible(true);
+            acceptingField.set(null, true);
+
+            ADAPTATION_ENCHANT = new CustomEnchantment(key);
+            Enchantment.registerEnchantment(ADAPTATION_ENCHANT);
+        } catch (Exception e) {
+            getLogger().severe("Не удалось зарегистрировать кастомное зачарование через API: " + e.getMessage());
+        }
+    }
+
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!sender.hasPermission("adaptation.admin")) {
@@ -63,8 +92,14 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
             return true;
         }
 
+        if (args.length == 1 && args[0].equalsIgnoreCase("reload")) {
+            reloadConfig();
+            sender.sendMessage(ChatColor.GREEN + "Конфигурация AdaptationPlugin успешно перезагружена!");
+            return true;
+        }
+
         if (args.length < 3 || !args[0].equalsIgnoreCase("give")) {
-            sender.sendMessage(ChatColor.RED + "Использование: /adaptation give <игрок> <1/2/3>");
+            sender.sendMessage(ChatColor.RED + "Использование: /adaptation give <игрок> <1/2/3> ИЛИ /adaptation reload");
             return true;
         }
 
@@ -84,17 +119,14 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         }
 
         ItemStack book = new ItemStack(Material.ENCHANTED_BOOK);
-        ItemMeta meta = book.getItemMeta();
+        EnchantmentStorageMeta meta = (EnchantmentStorageMeta) book.getItemMeta();
         if (meta != null) {
-            String strLvl = lvl == 1 ? "I" : lvl == 2 ? "II" : "III";
-            List<String> lore = new ArrayList<>();
-            lore.add(ChatColor.LIGHT_PURPLE + "Адаптация " + strLvl);
-            meta.setLore(lore);
+            meta.addStoredEnchant(ADAPTATION_ENCHANT, lvl, true);
             book.setItemMeta(meta);
         }
 
         target.getInventory().addItem(book);
-        sender.sendMessage(ChatColor.GREEN + "Книга Адаптация " + args[2] + " успешно выдана игроку " + target.getName());
+        sender.sendMessage(ChatColor.GREEN + "Полноценная книга Адаптация " + args[2] + " выдана игроку " + target.getName());
         return true;
     }
 
@@ -105,35 +137,21 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         if (left == null || right == null || right.getType() != Material.ENCHANTED_BOOK) return;
 
         String type = left.getType().name();
-        if (!type.contains("HELMET") && !type.contains("CHESTPLATE") && !type.contains("LEGGINGS") && !type.contains("BOOTS") && left.getType() != Material.ENCHANTED_BOOK) return;
+        if (!type.contains("HELMET") && !type.contains("CHESTPLATE") && !type.contains("LEGGINGS") && !type.contains("BOOTS")) return;
 
-        int lvlLeft = getLvl(left), lvlRight = getLvl(right);
-        if (lvlRight == 0) return;
+        int lvlLeft = left.getEnchantmentLevel(ADAPTATION_ENCHANT);
+        
+        EnchantmentStorageMeta rightMeta = (EnchantmentStorageMeta) right.getItemMeta();
+        if (rightMeta == null || !rightMeta.hasStoredEnchant(ADAPTATION_ENCHANT)) return;
+        int lvlRight = rightMeta.getStoredEnchantLevel(ADAPTATION_ENCHANT);
 
         int finalLvl = (lvlLeft == lvlRight && lvlLeft < 3) ? lvlLeft + 1 : Math.max(lvlLeft, lvlRight);
         
         ItemStack result = left.clone();
-        ItemMeta meta = result.getItemMeta();
-        if (meta == null) return;
-
-        List<String> lore = meta.hasLore() ? meta.getLore() : new ArrayList<>();
-        lore.removeIf(l -> l.contains("Адаптация I") || l.contains("Адаптация II") || l.contains("Адаптация III"));
+        result.addUnsafeEnchantment(ADAPTATION_ENCHANT, finalLvl);
         
-        String strLvl = finalLvl == 1 ? "I" : finalLvl == 2 ? "II" : "III";
-        lore.add(ChatColor.LIGHT_PURPLE + "Адаптация " + strLvl);
-        
-        meta.setLore(lore); result.setItemMeta(meta);
-        event.setResult(result); anvil.setRepairCost(5); 
-    }
-
-    private int getLvl(ItemStack item) {
-        if (item == null || !item.hasItemMeta() || !item.getItemMeta().hasLore()) return 0;
-        for (String line : item.getItemMeta().getLore()) {
-            if (line.contains("Адаптация III")) return 3;
-            if (line.contains("Адаптация II")) return 2;
-            if (line.contains("Адаптация I")) return 1;
-        }
-        return 0;
+        event.setResult(result); 
+        anvil.setRepairCost(5); 
     }
     @EventHandler(priority = EventPriority.HIGH)
     public void onPlayerDamage(EntityDamageEvent event) {
@@ -142,8 +160,10 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
 
         int totalLvl = 0, pieceCount = 0;
         for (ItemStack armor : player.getInventory().getArmorContents()) {
-            int lvl = getLvl(armor);
-            if (lvl > 0) { totalLvl += lvl; pieceCount++; }
+            if (armor != null && armor.hasItemMeta() && armor.getEnchantmentLevel(ADAPTATION_ENCHANT) > 0) {
+                totalLvl += armor.getEnchantmentLevel(ADAPTATION_ENCHANT);
+                pieceCount++;
+            }
         }
         if (pieceCount == 0) return;
 
@@ -167,7 +187,9 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
                         superDamageCounters.putIfAbsent(uuid, new HashMap<>());
                         int sHits = superDamageCounters.get(uuid).getOrDefault(type, 0) + 1;
                         superDamageCounters.get(uuid).put(type, sHits);
-                        if (sHits >= 8) activateSuper(player, type);
+                        
+                        int requiredSuperHits = getConfig().getInt("settings.required-super-hits", 8);
+                        if (sHits >= requiredSuperHits) activateSuper(player, type);
                     }
                 }
             } else {
@@ -179,7 +201,15 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         if (isSpam) return;
 
         double avg = (double) totalLvl / pieceCount;
-        int req = avg > 2.0 ? 6 : avg > 1.0 ? 8 : 10;
+        
+        int req;
+        if (avg > 2.0) {
+            req = getConfig().getInt("settings.required-hits.lvl3", 6);
+        } else if (avg > 1.0) {
+            req = getConfig().getInt("settings.required-hits.lvl2", 8);
+        } else {
+            req = getConfig().getInt("settings.required-hits.lvl1", 10);
+        }
 
         damageCounters.putIfAbsent(uuid, new HashMap<>());
         int hits = damageCounters.get(uuid).getOrDefault(type, 0) + 1;
@@ -216,7 +246,9 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         String line = ChatColor.WHITE + "" + ChatColor.BOLD + "АДАПТАЦИЯ К: " + suff;
         
         BarColor barColor = type.equals("MELEE") ? BarColor.RED : type.equals("RANGED") ? BarColor.GREEN : BarColor.PURPLE;
-        createBossBarTimer(player, line, barColor, 10);
+        
+        int duration = getConfig().getInt("settings.duration-normal", 10);
+        createBossBarTimer(player, line, barColor, duration);
     }
 
     private void activateSuper(Player player, String type) {
@@ -236,7 +268,9 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         String line = prefixStyle + "ПОВЫШ. АДАПТАЦИЯ К: " + suff;
         
         BarColor barColor = type.equals("MELEE") ? BarColor.RED : type.equals("RANGED") ? BarColor.GREEN : BarColor.PURPLE;
-        createBossBarTimer(player, line, barColor, 8);
+        
+        int duration = getConfig().getInt("settings.duration-super", 8);
+        createBossBarTimer(player, line, barColor, duration);
     }
 
     private void createBossBarTimer(Player player, String msg, BarColor color, int sec) {
@@ -275,7 +309,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
                 bossBar.setProgress(timeLeft / maxTime);
                 timeLeft -= 0.05; 
             }
-        }.runTaskTimer(this, 0L, 1L)); // Таймер тикает каждые 0.05 сек для идеальной плавности
+        }.runTaskTimer(this, 0L, 1L));
     }
 
     private void playBell(Player player, float pitch, long per) {
@@ -309,4 +343,16 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         if (activeTimers.containsKey(id)) { activeTimers.get(id).cancel(); activeTimers.remove(id); }
         if (activeBossBars.containsKey(id)) { activeBossBars.get(id).removeAll(); activeBossBars.remove(id); }
     }
+}
+
+class CustomEnchantment extends Enchantment {
+    public CustomEnchantment(NamespacedKey key) { super(key); }
+    @Override public String getName() { return "ADAPTATION"; }
+    @Override public int getMaxLevel() { return 3; }
+    @Override public int getStartLevel() { return 1; }
+    @Override public EnchantmentTarget getItemTarget() { return EnchantmentTarget.ARMOR; }
+    @Override public boolean isTreasure() { return false; }
+    @Override public boolean isCursed() { return false; }
+    @Override public boolean conflictsWith(Enchantment other) { return false; }
+    @Override public boolean canEnchantItem(ItemStack item) { return true; }
 }
