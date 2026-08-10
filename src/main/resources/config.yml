@@ -1,0 +1,8 @@
+settings:
+  duration-normal: 10
+  duration-super: 8
+  required-hits:
+    lvl1: 10
+    lvl2: 8
+    lvl3: 6
+  required-super-hits: 10
