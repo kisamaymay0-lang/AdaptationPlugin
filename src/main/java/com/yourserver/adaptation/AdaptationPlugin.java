@@ -6,14 +6,12 @@ import org.bukkit.Material;
 import org.bukkit.Sound;
 import org.bukkit.Particle;
 import org.bukkit.Color;
-import org.bukkit.NamespacedKey;
 import org.bukkit.boss.BarColor;
 import org.bukkit.boss.BarStyle;
 import org.bukkit.boss.BossBar;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
-import org.bukkit.enchantments.Enchantment;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.entity.Player;
@@ -24,7 +22,6 @@ import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDamageEvent.DamageCause;
 import org.bukkit.event.inventory.PrepareAnvilEvent;
 import org.bukkit.inventory.AnvilInventory;
-import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.EnchantmentStorageMeta;
@@ -53,7 +50,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         if (getCommand("adaptation") != null) {
             getCommand("adaptation").setExecutor(this);
         }
-        getLogger().info("Плагин AdaptationPlugin [FIXED-ANVIL-ALL] успешно запущен!");
+        getLogger().info("Плагин AdaptationPlugin [GLINT-OVERRIDE] успешно запущен!");
     }
 
     @Override
@@ -70,18 +67,18 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
             return true;
         }
 
-        if (args.length == 1 && args[0].equalsIgnoreCase("reload")) {
+        if (args.length == 1 && args.get(0).equalsIgnoreCase("reload")) {
             reloadConfig();
             sender.sendMessage(ChatColor.GREEN + "Конфигурация AdaptationPlugin успешно перезагружена!");
             return true;
         }
 
-        if (args.length < 3 || !args[0].equalsIgnoreCase("give")) {
+        if (args.length < 3 || !args.get(0).equalsIgnoreCase("give")) {
             sender.sendMessage(ChatColor.RED + "Использование: /adaptation give <игрок> <1/2/3> ИЛИ /adaptation reload");
             return true;
         }
 
-        Player target = Bukkit.getPlayer(args[1]);
+        Player target = Bukkit.getPlayer(args.get(1));
         if (target == null || !target.isOnline()) {
             sender.sendMessage(ChatColor.RED + "Игрок не найден или оффлайн!");
             return true;
@@ -89,7 +86,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
 
         int lvl;
         try {
-            lvl = Integer.parseInt(args[2]);
+            lvl = Integer.parseInt(args.get(2));
             if (lvl < 1 || lvl > 3) throw new NumberFormatException();
         } catch (NumberFormatException e) {
             sender.sendMessage(ChatColor.RED + "Уровень должен быть от 1 до 3!");
@@ -106,13 +103,12 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
             lore.add(ChatColor.LIGHT_PURPLE + "Адаптация " + strLvl);
             meta.setLore(lore);
             
-            meta.addEnchant(Enchantment.LUCK_OF_THE_SEA, 1, true);
-            meta.addItemFlags(ItemFlag.HIDE_ENCHANTS);
+            meta.setEnchantmentGlintOverride(true);
             book.setItemMeta(meta);
         }
 
         target.getInventory().addItem(book);
-        sender.sendMessage(ChatColor.GREEN + "Книга Адаптация " + args[2] + " выдана игроку " + target.getName());
+        sender.sendMessage(ChatColor.GREEN + "Книга Адаптация " + args.get(2) + " выдана игроку " + target.getName());
         return true;
     }
     @EventHandler
@@ -134,9 +130,8 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
             EnchantmentStorageMeta resMeta = (EnchantmentStorageMeta) result.getItemMeta();
             EnchantmentStorageMeta rightMeta = (EnchantmentStorageMeta) right.getItemMeta();
             if (resMeta != null && rightMeta != null) {
-                for (Map.Entry<Enchantment, Integer> entry : rightMeta.getStoredEnchants().entrySet()) {
-                    Enchantment ench = entry.getKey();
-                    if (ench == Enchantment.LUCK_OF_THE_SEA) continue;
+                for (Map.Entry<org.bukkit.enchantments.Enchantment, Integer> entry : rightMeta.getStoredEnchants().entrySet()) {
+                    org.bukkit.enchantments.Enchantment ench = entry.getKey();
                     int level = entry.getValue();
                     if (resMeta.hasStoredEnchant(ench)) {
                         int currentLevel = resMeta.getStoredEnchantLevel(ench);
@@ -151,7 +146,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         } else {
             ItemMeta resMeta = result.getItemMeta();
             if (resMeta != null) {
-                Map<Enchantment, Integer> enchantsToAdd = new HashMap<>();
+                Map<org.bukkit.enchantments.Enchantment, Integer> enchantsToAdd = new HashMap<>();
                 if (right.getType() == Material.ENCHANTED_BOOK) {
                     EnchantmentStorageMeta rightMeta = (EnchantmentStorageMeta) right.getItemMeta();
                     if (rightMeta != null) enchantsToAdd.putAll(rightMeta.getStoredEnchants());
@@ -159,9 +154,8 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
                     enchantsToAdd.putAll(right.getEnchantments());
                 }
                 
-                for (Map.Entry<Enchantment, Integer> entry : enchantsToAdd.entrySet()) {
-                    Enchantment ench = entry.getKey();
-                    if (ench == Enchantment.LUCK_OF_THE_SEA) continue;
+                for (Map.Entry<org.bukkit.enchantments.Enchantment, Integer> entry : enchantsToAdd.entrySet()) {
+                    org.bukkit.enchantments.Enchantment ench = entry.getKey();
                     int level = entry.getValue();
                     if (resMeta.hasEnchant(ench)) {
                         int currentLevel = resMeta.getEnchantLevel(ench);
@@ -187,10 +181,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
             meta.setLore(lore);
         }
 
-        if (!meta.hasEnchants() && (meta instanceof EnchantmentStorageMeta ? !((EnchantmentStorageMeta)meta).hasStoredEnchants() : true)) {
-            meta.addEnchant(Enchantment.LUCK_OF_THE_SEA, 1, true);
-            meta.addItemFlags(ItemFlag.HIDE_ENCHANTS);
-        }
+        meta.setEnchantmentGlintOverride(true);
 
         if (result.getType() == Material.ENCHANTED_BOOK) {
             meta.setDisplayName(ChatColor.AQUA + "Чародейская книга");
