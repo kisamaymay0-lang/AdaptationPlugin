@@ -50,7 +50,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         if (getCommand("adaptation") != null) {
             getCommand("adaptation").setExecutor(this);
         }
-        getLogger().info("Плагин AdaptationPlugin [DYNAMIC-PROTECTION] успешно запущен!");
+        getLogger().info("Плагин AdaptationPlugin [FIXED-FINAL] успешно запущен!");
     }
 
     @Override
@@ -163,15 +163,15 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
             EnchantmentStorageMeta resMeta = (EnchantmentStorageMeta) result.getItemMeta();
             EnchantmentStorageMeta rightMeta = (EnchantmentStorageMeta) right.getItemMeta();
             if (resMeta != null && rightMeta != null) {
-                for (Map.Entry<org.bukkit.enchantments.Enchantment, Integer> entry : rightMeta.getStoredEnchants().entrySet()) {
-                    org.bukkit.enchantments.Enchantment专 = entry.getKey();
+                for (Map.Entry<Enchantment, Integer> entry : rightMeta.getStoredEnchants().entrySet()) {
+                    Enchantment ench = entry.getKey();
                     int level = entry.getValue();
-                    if (resMeta.hasStoredEnchant(专)) {
-                        int currentLevel = resMeta.getStoredEnchantLevel(专);
+                    if (resMeta.hasStoredEnchant(ench)) {
+                        int currentLevel = resMeta.getStoredEnchantLevel(ench);
                         int finalEnchLevel = (currentLevel == level) ? currentLevel + 1 : Math.max(currentLevel, level);
-                        resMeta.addStoredEnchant(专, Math.min(专.getMaxLevel(), finalEnchLevel), true);
+                        resMeta.addStoredEnchant(ench, Math.min(ench.getMaxLevel(), finalEnchLevel), true);
                     } else {
-                        resMeta.addStoredEnchant(专, level, true);
+                        resMeta.addStoredEnchant(ench, level, true);
                     }
                 }
                 result.setItemMeta(resMeta);
@@ -179,7 +179,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         } else {
             ItemMeta resMeta = result.getItemMeta();
             if (resMeta != null) {
-                Map<org.bukkit.enchantments.Enchantment, Integer> enchantsToAdd = new HashMap<>();
+                Map<Enchantment, Integer> enchantsToAdd = new HashMap<>();
                 if (right.getType() == Material.ENCHANTED_BOOK) {
                     EnchantmentStorageMeta rightMeta = (EnchantmentStorageMeta) right.getItemMeta();
                     if (rightMeta != null) enchantsToAdd.putAll(rightMeta.getStoredEnchants());
@@ -187,15 +187,15 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
                     enchantsToAdd.putAll(right.getEnchantments());
                 }
                 
-                for (Map.Entry<org.bukkit.enchantments.Enchantment, Integer> entry : enchantsToAdd.entrySet()) {
-                    org.bukkit.enchantments.Enchantment 专 = entry.getKey();
+                for (Map.Entry<Enchantment, Integer> entry : enchantsToAdd.entrySet()) {
+                    Enchantment ench = entry.getKey();
                     int level = entry.getValue();
-                    if (resMeta.hasEnchant(专)) {
-                        int currentLevel = resMeta.getEnchantLevel(专);
+                    if (resMeta.hasEnchant(ench)) {
+                        int currentLevel = resMeta.getEnchantLevel(ench);
                         int finalEnchLevel = (currentLevel == level) ? currentLevel + 1 : Math.max(currentLevel, level);
-                        resMeta.addEnchant(专, Math.min(专.getMaxLevel(), finalEnchLevel), true);
+                        resMeta.addEnchant(ench, Math.min(ench.getMaxLevel(), finalEnchLevel), true);
                     } else {
-                        resMeta.addEnchant(专, level, true);
+                        resMeta.addEnchant(ench, level, true);
                     }
                 }
                 result.setItemMeta(resMeta);
@@ -329,13 +329,11 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         damageCounters.remove(uuid); superDamageCounters.remove(uuid);
         playBell(player, 0.9f, 20L);
 
-        String suff = type.equals("MELEE") ? ChatColor.RED + "" + ChatColor.BOLD + "БЛИЖ. УРОН!" : 
-                       type.equals("RANGED") ? ChatColor.GREEN + "" + ChatColor.BOLD + "СНАРЯДАМ!" : 
-                       ChatColor.LIGHT_PURPLE + "" + ChatColor.BOLD + "МАГИИ!";
+        String typeStr = type.equals("MELEE") ? "БЛИЖ. УРОН!" : type.equals("RANGED") ? "СНАРЯДАМ!" : "МАГИИ!";
+        ChatColor color = type.equals("MELEE") ? ChatColor.RED : type.equals("RANGED") ? ChatColor.GREEN : ChatColor.LIGHT_PURPLE;
+        String line = ChatColor.WHITE + "" + ChatColor.BOLD + "АДАПТАЦИЯ К: " + color + ChatColor.BOLD + typeStr;
 
-        String line = ChatColor.WHITE + "" + ChatColor.BOLD + "АДАПТАЦИЯ К: " + suff;
         BarColor barColor = type.equals("MELEE") ? BarColor.RED : type.equals("RANGED") ? BarColor.GREEN : BarColor.PURPLE;
-        
         int duration = getConfig().getInt("settings.duration-normal", 10);
         createBossBarTimer(player, line, barColor, duration);
     }
@@ -349,14 +347,12 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         player.addPotionEffect(new PotionEffect(PotionEffectType.ABSORPTION, 160, 1, false, false, true));
         playBell(player, 1.4f, 15L);
 
-        String prefixStyle = ChatColor.WHITE + "" + ChatColor.UNDERLINE + "" + ChatColor.BOLD;
-        String suff = type.equals("MELEE") ? ChatColor.DARK_RED + "" + ChatColor.UNDERLINE + "" + ChatColor.BOLD + "БЛИЖ. УРОН!" : 
-                       type.equals("RANGED") ? ChatColor.DARK_GREEN + "" + ChatColor.UNDERLINE + "" + ChatColor.BOLD + "СНАРЯДАМ!" : 
-                       ChatColor.DARK_PURPLE + "" + ChatColor.UNDERLINE + "" + ChatColor.BOLD + "МАГИИ!";
+        String prefix = ChatColor.WHITE + "" + ChatColor.UNDERLINE + "" + ChatColor.BOLD + "ПОВЫШ. АДАПТАЦИЯ К: ";
+        String typeStr = type.equals("MELEE") ? "БЛИЖ. УРОН!" : type.equals("RANGED") ? "СНАРЯДАМ!" : "МАГИИ!";
+        ChatColor color = type.equals("MELEE") ? ChatColor.DARK_RED : type.equals("RANGED") ? ChatColor.DARK_GREEN : ChatColor.DARK_PURPLE;
+        String line = prefix + color + ChatColor.UNDERLINE + "" + ChatColor.BOLD + typeStr;
 
-        String line = prefixStyle + "ПОВЫШ. АДАПТАЦИЯ К: " + suff;
         BarColor barColor = type.equals("MELEE") ? BarColor.RED : type.equals("RANGED") ? BarColor.GREEN : BarColor.PURPLE;
-        
         int duration = getConfig().getInt("settings.duration-super", 4);
         createBossBarTimer(player, line, barColor, duration);
     }
