@@ -71,13 +71,13 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
             return true;
         }
 
-        if (args.length == 1 && args.equalsIgnoreCase("reload")) {
+        if (args.length == 1 && args[0].equalsIgnoreCase("reload")) {
             reloadConfig();
             sender.sendMessage(ChatColor.GREEN + "Конфигурация AdaptationPlugin успешно перезагружена!");
             return true;
         }
 
-        if (args.length < 3 || !args.equalsIgnoreCase("give")) {
+        if (args.length < 3 || !args[0].equalsIgnoreCase("give")) {
             sender.sendMessage(ChatColor.RED + "Использование: /adaptation give <игрок> <1/2/3> ИЛИ /adaptation reload");
             return true;
         }
