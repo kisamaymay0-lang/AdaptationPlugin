@@ -1,6 +1,10 @@
-name: AdaptationPlugin
-version: 1.0
+name: f8-adaptation-sosicka-bobr551
+version: 8
 main: com.yourserver.adaptation.AdaptationPlugin
-api-version: '1.21'
-author: furrer9
-description: писька
+api-version: 1.20
+
+commands:
+  adaptation:
+    description: вадать книгу адаптации, админка надо
+    permission: adaptation.admin
+    usage: /adaptation give <игрок> <1/2/3>
