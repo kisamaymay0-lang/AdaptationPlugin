@@ -59,7 +59,6 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         activeBossBars.values().forEach(BossBar::removeAll);
         damageCounters.clear(); superDamageCounters.clear(); activeTimers.clear(); activeAdaptations.clear(); superAdaptations.clear(); lastHitTime.clear(); activeBossBars.clear(); activeTimesLeft.clear(); activeMaxTimes.clear();
     }
-
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!sender.hasPermission("adaptation.admin")) {
@@ -97,12 +96,10 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         ItemMeta meta = book.getItemMeta();
         if (meta != null) {
             meta.setDisplayName(ChatColor.AQUA + "Чародейская книга");
-            
             String strLvl = lvl == 1 ? "I" : lvl == 2 ? "II" : "III";
             List<String> lore = new ArrayList<>();
             lore.add(ChatColor.LIGHT_PURPLE + "Адаптация " + strLvl);
             meta.setLore(lore);
-            
             meta.setEnchantmentGlintOverride(true);
             book.setItemMeta(meta);
         }
@@ -111,6 +108,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         sender.sendMessage(ChatColor.GREEN + "Книга Адаптация " + args[2] + " выдана игроку " + target.getName());
         return true;
     }
+
     @EventHandler
     public void onAnvilPrepare(PrepareAnvilEvent event) {
         AnvilInventory anvil = event.getInventory();
@@ -123,22 +121,57 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         if (lvlLeft == 0 && lvlRight == 0) return;
 
         int finalLvl = (lvlLeft == lvlRight && lvlLeft < 3) ? lvlLeft + 1 : Math.max(lvlLeft, lvlRight);
-        
         ItemStack result = left.clone();
         
+        if (left.getType() != Material.ENCHANTED_BOOK) {
+            org.bukkit.inventory.meta.Damageable targetDamageMeta = (org.bukkit.inventory.meta.Damageable) result.getItemMeta();
+            if (targetDamageMeta != null && targetDamageMeta.hasDamage()) {
+                int currentDamage = targetDamageMeta.getDamage();
+                int maxDurability = left.getType().getMaxDurability();
+                
+                if (right.getType() == left.getType()) {
+                    org.bukkit.inventory.meta.Damageable rightDamageMeta = (org.bukkit.inventory.meta.Damageable) right.getItemMeta();
+                    if (rightDamageMeta != null) {
+                        int rightDamage = rightDamageMeta.getDamage();
+                        int bonus = (int) (maxDurability * 0.12);
+                        int newDamage = Math.max(0, currentDamage - (maxDurability - rightDamage) - bonus);
+                        targetDamageMeta.setDamage(newDamage);
+                        result.setItemMeta(targetDamageMeta);
+                    }
+                } else {
+                    String matName = left.getType().name();
+                    boolean canRepair = false;
+                    if (matName.contains("DIAMOND") && right.getType() == Material.DIAMOND) canRepair = true;
+                    else if (matName.contains("NETHERITE") && right.getType() == Material.NETHERITE_INGOT) canRepair = true;
+                    else if (matName.contains("IRON") && right.getType() == Material.IRON_INGOT) canRepair = true;
+                    else if (matName.contains("GOLD") && right.getType() == Material.GOLD_INGOT) canRepair = true;
+                    else if (matName.contains("CHAINMAIL") && right.getType() == Material.IRON_INGOT) canRepair = true;
+                    else if (matName.contains("LEATHER") && right.getType() == Material.LEATHER) canRepair = true;
+                    
+                    if (canRepair) {
+                        int repairAmount = (int) (maxDurability * 0.25);
+                        int itemsNeeded = (int) Math.ceil((double) currentDamage / repairAmount);
+                        int itemsUsed = Math.min(right.getAmount(), itemsNeeded);
+                        int newDamage = Math.max(0, currentDamage - (repairAmount * itemsUsed));
+                        targetDamageMeta.setDamage(newDamage);
+                        result.setItemMeta(targetDamageMeta);
+                    }
+                }
+            }
+        }
         if (result.getType() == Material.ENCHANTED_BOOK && right.getType() == Material.ENCHANTED_BOOK) {
             EnchantmentStorageMeta resMeta = (EnchantmentStorageMeta) result.getItemMeta();
             EnchantmentStorageMeta rightMeta = (EnchantmentStorageMeta) right.getItemMeta();
             if (resMeta != null && rightMeta != null) {
                 for (Map.Entry<org.bukkit.enchantments.Enchantment, Integer> entry : rightMeta.getStoredEnchants().entrySet()) {
-                    org.bukkit.enchantments.Enchantment ench = entry.getKey();
+                    org.bukkit.enchantments.Enchantment专 = entry.getKey();
                     int level = entry.getValue();
-                    if (resMeta.hasStoredEnchant(ench)) {
-                        int currentLevel = resMeta.getStoredEnchantLevel(ench);
+                    if (resMeta.hasStoredEnchant(专)) {
+                        int currentLevel = resMeta.getStoredEnchantLevel(专);
                         int finalEnchLevel = (currentLevel == level) ? currentLevel + 1 : Math.max(currentLevel, level);
-                        resMeta.addStoredEnchant(ench, Math.min(ench.getMaxLevel(), finalEnchLevel), true);
+                        resMeta.addStoredEnchant(专, Math.min(专.getMaxLevel(), finalEnchLevel), true);
                     } else {
-                        resMeta.addStoredEnchant(ench, level, true);
+                        resMeta.addStoredEnchant(专, level, true);
                     }
                 }
                 result.setItemMeta(resMeta);
@@ -155,14 +188,14 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
                 }
                 
                 for (Map.Entry<org.bukkit.enchantments.Enchantment, Integer> entry : enchantsToAdd.entrySet()) {
-                    org.bukkit.enchantments.Enchantment ench = entry.getKey();
+                    org.bukkit.enchantments.Enchantment 专 = entry.getKey();
                     int level = entry.getValue();
-                    if (resMeta.hasEnchant(ench)) {
-                        int currentLevel = resMeta.getEnchantLevel(ench);
+                    if (resMeta.hasEnchant(专)) {
+                        int currentLevel = resMeta.getEnchantLevel(专);
                         int finalEnchLevel = (currentLevel == level) ? currentLevel + 1 : Math.max(currentLevel, level);
-                        resMeta.addEnchant(ench, Math.min(ench.getMaxLevel(), finalEnchLevel), true);
+                        resMeta.addEnchant(专, Math.min(专.getMaxLevel(), finalEnchLevel), true);
                     } else {
-                        resMeta.addEnchant(ench, level, true);
+                        resMeta.addEnchant(专, level, true);
                     }
                 }
                 result.setItemMeta(resMeta);
@@ -182,7 +215,6 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         }
 
         meta.setEnchantmentGlintOverride(true);
-
         if (result.getType() == Material.ENCHANTED_BOOK) {
             meta.setDisplayName(ChatColor.AQUA + "Чародейская книга");
         }
@@ -210,10 +242,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         int totalLvl = 0, pieceCount = 0;
         for (ItemStack armor : player.getInventory().getArmorContents()) {
             int lvl = getLvlFromLore(armor);
-            if (lvl > 0) {
-                totalLvl += lvl;
-                pieceCount++;
-            }
+            if (lvl > 0) { totalLvl += lvl; pieceCount++; }
         }
         if (pieceCount == 0) return;
 
@@ -226,7 +255,6 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
 
         if (activeAdaptations.containsKey(uuid)) {
             if (type.equals(activeAdaptations.get(uuid))) {
-                
                 spawnAdaptationParticles(player, type);
 
                 if (superAdaptations.getOrDefault(uuid, false)) {
@@ -409,4 +437,3 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         if (activeBossBars.containsKey(id)) { activeBossBars.get(id).removeAll(); activeBossBars.remove(id); }
     }
 }
-
