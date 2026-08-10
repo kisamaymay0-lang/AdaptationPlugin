@@ -3,9 +3,11 @@ package com.yourserver.adaptation;
 import net.md_5.bungee.api.ChatColor;
 import net.md_5.bungee.api.ChatMessageType;
 import net.md_5.bungee.api.chat.TextComponent;
+import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.Sound;
 import org.bukkit.Particle;
+import org.bukkit.Color;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.entity.Player;
@@ -45,7 +47,6 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
         damageCounters.clear(); superDamageCounters.clear(); activeTimers.clear(); activeAdaptations.clear(); superAdaptations.clear(); lastHitTime.clear();
     }
 
-    // 🔨 ПОЛНАЯ ВАНИЛЬНАЯ НАКОВАЛЬНЯ (СКРЕЩИВАНИЕ ЧАРОВ)
     @EventHandler
     public void onAnvilPrepare(PrepareAnvilEvent event) {
         AnvilInventory anvil = event.getInventory();
@@ -83,8 +84,6 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
         }
         return 0;
     }
-
-    // 🛡️ ОБРАБОТКА УРОНА И БАЛАНСА
     @EventHandler(priority = EventPriority.HIGH)
     public void onPlayerDamage(EntityDamageEvent event) {
         if (!(event.getEntity() instanceof Player)) return;
@@ -106,11 +105,13 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
 
         if (activeAdaptations.containsKey(uuid)) {
             if (type.equals(activeAdaptations.get(uuid))) {
-                player.getWorld().spawnParticle(Particle.CRIT, player.getLocation().add(0, 1, 0), 3, 0.2, 0.2, 0.2, 0.1);
+                
+                spawnAdaptationParticles(player, type);
+
                 if (superAdaptations.getOrDefault(uuid, false)) {
-                    event.setDamage(event.getDamage() * 0.50); // 50% защита
+                    event.setDamage(event.getDamage() * 0.50);
                 } else {
-                    event.setDamage(event.getDamage() * (1.0 - (pieceCount * 0.075))); // 30% защита
+                    event.setDamage(event.getDamage() * (1.0 - (pieceCount * 0.075)));
                     if (!isSpam) {
                         superDamageCounters.putIfAbsent(uuid, new HashMap<>());
                         int sHits = superDamageCounters.get(uuid).getOrDefault(type, 0) + 1;
@@ -119,7 +120,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
                     }
                 }
             } else {
-                event.setDamage(event.getDamage() * (1.0 + (pieceCount * 0.10))); // Штраф уязвимости
+                event.setDamage(event.getDamage() * (1.0 + (pieceCount * 0.10)));
             }
             return;
         }
@@ -136,13 +137,32 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
         if (hits >= req) activateNormal(player, type);
     }
 
+    private void spawnAdaptationParticles(Player player, String type) {
+        Color color;
+        switch (type) {
+            case "MELEE": color = Color.fromRGB(255, 0, 0); break;
+            case "RANGED": color = Color.fromRGB(0, 255, 0); break;
+            case "MAGIC": color = Color.fromRGB(200, 0, 255); break;
+            default: color = Color.WHITE; break;
+        }
+        Particle.DustOptions dustOptions = new Particle.DustOptions(color, 1.2f);
+        player.getWorld().spawnParticle(Particle.DUST, player.getLocation().add(0, 1, 0), 6, 0.3, 0.4, 0.3, 0.0, dustOptions);
+    }
+
     private void activateNormal(Player player, String type) {
-        UUID uuid = player.getUniqueId(); activeAdaptations.put(uuid, type);
+        UUID uuid = player.getUniqueId(); 
+        if (activeTimers.containsKey(uuid)) activeTimers.get(uuid).cancel();
+
+        activeAdaptations.put(uuid, type);
         damageCounters.remove(uuid); superDamageCounters.remove(uuid);
         playBell(player, 0.9f, 20L);
 
-        String suff = type.equals("MELEE") ? ChatColor.RED + "БЛИЖ. УРОН!" : type.equals("RANGED") ? ChatColor.GREEN + "СНАРЯДАМ!" : ChatColor.LIGHT_PURPLE + "МАГИИ!";
-        startTimer(player, ChatColor.WHITE + "" + ChatColor.BOLD + "АДАПТАЦИЯ К: " + suff, 10);
+        String suff = type.equals("MELEE") ? ChatColor.RED + "" + ChatColor.BOLD + "БЛИЖ. УРОН!" : 
+                       type.equals("RANGED") ? ChatColor.GREEN + "" + ChatColor.BOLD + "СНАРЯДАМ!" : 
+                       ChatColor.LIGHT_PURPLE + "" + ChatColor.BOLD + "МАГИИ!";
+
+        String line = ChatColor.WHITE + "" + ChatColor.BOLD + "АДАПТАЦИЯ К: " + suff;
+        startTimer(player, line, 10);
     }
 
     private void activateSuper(Player player, String type) {
@@ -150,11 +170,15 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
         if (activeTimers.containsKey(uuid)) activeTimers.get(uuid).cancel();
 
         superAdaptations.put(uuid, true); superDamageCounters.remove(uuid);
-        player.addPotionEffect(new PotionEffect(PotionEffectType.ABSORPTION, 160, 1, false, false, true)); // 4 золотых сердца
+        player.addPotionEffect(new PotionEffect(PotionEffectType.ABSORPTION, 160, 1, false, false, true));
         playBell(player, 1.4f, 15L);
 
-        String suff = type.equals("MELEE") ? ChatColor.DARK_RED + "БЛИЖ. УРОН!" : type.equals("RANGED") ? ChatColor.DARK_GREEN + "СНАРЯДАМ!" : ChatColor.DARK_PURPLE + "МАГИИ!";
-        String line = ChatColor.WHITE + "" + ChatColor.UNDERLINE + "" + ChatColor.BOLD + "ПОВЫШ. АДАПТАЦИЯ К: " + ChatColor.RESET + suff;
+        String prefixStyle = ChatColor.WHITE + "" + ChatColor.UNDERLINE + "" + ChatColor.BOLD;
+        String suff = type.equals("MELEE") ? ChatColor.DARK_RED + "" + ChatColor.UNDERLINE + "" + ChatColor.BOLD + "БЛИЖ. УРОН!" : 
+                       type.equals("RANGED") ? ChatColor.DARK_GREEN + "" + ChatColor.UNDERLINE + "" + ChatColor.BOLD + "СНАРЯДАМ!" : 
+                       ChatColor.DARK_PURPLE + "" + ChatColor.UNDERLINE + "" + ChatColor.BOLD + "МАГИИ!";
+
+        String line = prefixStyle + "ПОВЫШ. АДАПТАЦИЯ К: " + suff;
         startTimer(player, line, 8);
     }
 
@@ -164,24 +188,29 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
             int time = sec;
             @Override
             public void run() {
-                if (!player.isOnline() || time <= 0) {
+                Player p = Bukkit.getPlayer(uuid);
+                if (p == null || !p.isOnline() || time <= 0) {
                     activeAdaptations.remove(uuid); superAdaptations.remove(uuid); superDamageCounters.remove(uuid); activeTimers.remove(uuid);
-                    if (player.isOnline()) player.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(""));
+                    if (p != null && p.isOnline()) p.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(""));
                     cancel(); return;
                 }
-                player.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(msg)); time--;
+                p.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(msg)); time--;
             }
         }.runTaskTimer(this, 0L, 20L));
     }
 
     private void playBell(Player player, float pitch, long per) {
-        player.playSound(player.getLocation(), Sound.BLOCK_BELL_USE, 3.0f, pitch);
+        if (player == null) return;
+        player.getWorld().playSound(player.getLocation(), Sound.BLOCK_BELL_USE, 3.0f, pitch);
+        UUID uuid = player.getUniqueId();
+        
         new BukkitRunnable() {
             int count = 1;
             @Override
             public void run() {
-                if (!player.isOnline() || count >= 3) { cancel(); return; }
-                player.playSound(player.getLocation(), Sound.BLOCK_BELL_USE, 3.0f, pitch); count++;
+                Player p = Bukkit.getPlayer(uuid);
+                if (p == null || !p.isOnline() || count >= 3) { cancel(); return; }
+                p.getWorld().playSound(p.getLocation(), Sound.BLOCK_BELL_USE, 3.0f, pitch); count++;
             }
         }.runTaskTimer(this, per, per);
     }
