@@ -43,6 +43,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
     private final Map<UUID, BossBar> activeBossBars = new HashMap<>();
     private final Map<UUID, Double> activeTimesLeft = new HashMap<>();
     private final Map<UUID, Double> activeMaxTimes = new HashMap<>();
+    private final Map<UUID, Long> cooldownEndTimes = new HashMap<>();
 
     @Override
     public void onEnable() {
@@ -51,14 +52,14 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         if (getCommand("adaptation") != null) {
             getCommand("adaptation").setExecutor(this);
         }
-        getLogger().info("Плагин AdaptationPlugin [DYNAMIC-PROTECTION] успешно запущен!");
+        getLogger().info("Плагин AdaptationPlugin [COOLDOWN-UPDATE] успешно запущен!");
     }
 
     @Override
     public void onDisable() {
         activeTimers.values().forEach(BukkitTask::cancel);
         activeBossBars.values().forEach(BossBar::removeAll);
-        damageCounters.clear(); superDamageCounters.clear(); activeTimers.clear(); activeAdaptations.clear(); superAdaptations.clear(); lastHitTime.clear(); activeBossBars.clear(); activeTimesLeft.clear(); activeMaxTimes.clear();
+        damageCounters.clear(); superDamageCounters.clear(); activeTimers.clear(); activeAdaptations.clear(); superAdaptations.clear(); lastHitTime.clear(); activeBossBars.clear(); activeTimesLeft.clear(); activeMaxTimes.clear(); cooldownEndTimes.clear();
     }
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
@@ -240,6 +241,10 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         if (!(event.getEntity() instanceof Player)) return;
         Player player = (Player) event.getEntity(); UUID uuid = player.getUniqueId();
 
+        if (cooldownEndTimes.containsKey(uuid) && System.currentTimeMillis() < cooldownEndTimes.get(uuid)) {
+            return;
+        }
+
         int totalLvl = 0, pieceCount = 0;
         for (ItemStack armor : player.getInventory().getArmorContents()) {
             int lvl = getLvlFromLore(armor);
@@ -336,7 +341,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
 
         BarColor barColor = type.equals("MELEE") ? BarColor.RED : type.equals("RANGED") ? BarColor.GREEN : BarColor.PURPLE;
         int duration = getConfig().getInt("settings.duration-normal", 10);
-        createBossBarTimer(player, line, barColor, duration);
+        createBossBarTimer(player, line, barColor, duration, false);
     }
 
     private void activateSuper(Player player, String type) {
@@ -355,10 +360,10 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
 
         BarColor barColor = type.equals("MELEE") ? BarColor.RED : type.equals("RANGED") ? BarColor.GREEN : BarColor.PURPLE;
         int duration = getConfig().getInt("settings.duration-super", 4);
-        createBossBarTimer(player, line, barColor, duration);
+        createBossBarTimer(player, line, barColor, duration, true);
     }
 
-    private void createBossBarTimer(Player player, String msg, BarColor color, int sec) {
+    private void createBossBarTimer(Player player, String msg, BarColor color, int sec, boolean wasSuper) {
         UUID uuid = player.getUniqueId();
         BossBar bossBar = Bukkit.createBossBar(msg, color, BarStyle.SOLID);
         bossBar.addPlayer(player);
@@ -368,37 +373,66 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         activeMaxTimes.put(uuid, (double) sec);
 
         activeTimers.put(uuid, new BukkitRunnable() {
+            boolean isCooldownMode = false;
+            double maxTime = sec;
+            
             @Override
             public void run() {
                 Player p = Bukkit.getPlayer(uuid);
                 Double timeLeft = activeTimesLeft.get(uuid);
-                Double maxTime = activeMaxTimes.get(uuid);
                 
-                if (p == null || !p.isOnline() || timeLeft == null || timeLeft <= 0) {
-                    if (p != null && p.isOnline() && (timeLeft == null || timeLeft <= 0)) {
-                        p.getWorld().playSound(p.getLocation(), Sound.BLOCK_GLASS_BREAK, 1.0f, 0.8f);
-                        p.getWorld().spawnParticle(Particle.SMOKE, p.getLocation().add(0, 1, 0), 10, 0.2, 0.3, 0.2, 0.05);
-                    }
-                    
-                    activeAdaptations.remove(uuid); 
-                    superAdaptations.remove(uuid); 
-                    superDamageCounters.remove(uuid); 
-                    activeTimers.remove(uuid);
-                    activeTimesLeft.remove(uuid);
-                    activeMaxTimes.remove(uuid);
-                    
-                    if (activeBossBars.containsKey(uuid)) {
-                        activeBossBars.get(uuid).removeAll();
-                        activeBossBars.remove(uuid);
-                    }
-                    cancel(); 
+                if (p == null || !p.isOnline() || timeLeft == null) {
+                    cleanup(uuid);
+                    cancel();
                     return;
                 }
 
-                bossBar.setProgress(timeLeft / maxTime);
-                activeTimesLeft.put(uuid, timeLeft - 0.05); 
+                if (!isCooldownMode && timeLeft <= 0) {
+                    p.getWorld().playSound(p.getLocation(), Sound.BLOCK_GLASS_BREAK, 1.0f, 0.8f);
+                    p.getWorld().spawnParticle(Particle.SMOKE, p.getLocation().add(0, 1, 0), 10, 0.2, 0.3, 0.2, 0.05);
+
+                    activeAdaptations.remove(uuid);
+                    superAdaptations.remove(uuid);
+                    superDamageCounters.remove(uuid);
+
+                    int cdSec = wasSuper ? getConfig().getInt("settings.cooldown-super", 4) : getConfig().getInt("settings.cooldown-normal", 2);
+                    cooldownEndTimes.put(uuid, System.currentTimeMillis() + (cdSec * 1000L));
+
+                    isCooldownMode = true;
+                    maxTime = cdSec;
+                    timeLeft = 0.0;
+                    
+                    bossBar.setTitle(ChatColor.GRAY + "" + ChatColor.BOLD + "ПЕРЕЗАРЯДКА АДАПТАЦИИ");
+                    bossBar.setColor(BarColor.WHITE);
+                }
+
+                if (isCooldownMode) {
+                    if (timeLeft >= maxTime) {
+                        cleanup(uuid);
+                        cancel();
+                        return;
+                    }
+                    bossBar.setProgress(timeLeft / maxTime);
+                    activeTimesLeft.put(uuid, timeLeft + 0.05);
+                } else {
+                    bossBar.setProgress(timeLeft / maxTime);
+                    activeTimesLeft.put(uuid, timeLeft - 0.05);
+                }
             }
         }.runTaskTimer(this, 0L, 1L));
+    }
+
+    private void cleanup(UUID uuid) {
+        activeTimesLeft.remove(uuid);
+        activeMaxTimes.remove(uuid);
+        activeTimers.remove(uuid);
+        activeAdaptations.remove(uuid);
+        superAdaptations.remove(uuid);
+        superDamageCounters.remove(uuid);
+        if (activeBossBars.containsKey(uuid)) {
+            activeBossBars.get(uuid).removeAll();
+            activeBossBars.remove(uuid);
+        }
     }
 
     private void playBell(Player player, float pitch, long per) {
@@ -429,7 +463,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
     public void onQuit(org.bukkit.event.player.PlayerQuitEvent e) {
         UUID id = e.getPlayer().getUniqueId();
         damageCounters.remove(id); superDamageCounters.remove(id); activeAdaptations.remove(id); superAdaptations.remove(id); lastHitTime.remove(id);
-        activeTimesLeft.remove(id); activeMaxTimes.remove(id);
+        activeTimesLeft.remove(id); activeMaxTimes.remove(id); cooldownEndTimes.remove(id);
         if (activeTimers.containsKey(id)) { activeTimers.get(id).cancel(); activeTimers.remove(id); }
         if (activeBossBars.containsKey(id)) { activeBossBars.get(id).removeAll(); activeBossBars.remove(id); }
     }
