@@ -1,13 +1,17 @@
 package com.yourserver.adaptation;
 
 import net.md_5.bungee.api.ChatColor;
-import net.md_5.bungee.api.ChatMessageType;
-import net.md_5.bungee.api.chat.TextComponent;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.Sound;
 import org.bukkit.Particle;
 import org.bukkit.Color;
+import org.bukkit.boss.BarColor;
+import org.bukkit.boss.BarStyle;
+import org.bukkit.boss.BossBar;
+import org.bukkit.command.Command;
+import org.bukkit.command.CommandExecutor;
+import org.bukkit.command.CommandSender;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.entity.Player;
@@ -26,7 +30,7 @@ import org.bukkit.scheduler.BukkitTask;
 
 import java.util.*;
 
-public class AdaptationPlugin extends JavaPlugin implements Listener {
+public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExecutor {
 
     private final Map<UUID, Map<String, Integer>> damageCounters = new HashMap<>();
     private final Map<UUID, Map<String, Integer>> superDamageCounters = new HashMap<>(); 
@@ -34,17 +38,64 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
     private final Map<UUID, String> activeAdaptations = new HashMap<>();
     private final Map<UUID, Boolean> superAdaptations = new HashMap<>(); 
     private final Map<UUID, Long> lastHitTime = new HashMap<>();
+    private final Map<UUID, BossBar> activeBossBars = new HashMap<>();
 
     @Override
     public void onEnable() {
         getServer().getPluginManager().registerEvents(this, this);
-        getLogger().info("Плагин AdaptationPlugin [FIXED-FINAL] успешно запущен!");
+        if (getCommand("adaptation") != null) {
+            getCommand("adaptation").setExecutor(this);
+        }
+        getLogger().info("Плагин AdaptationPlugin [BOSSBAR-UPDATE] успешно запущен!");
     }
 
     @Override
     public void onDisable() {
         activeTimers.values().forEach(BukkitTask::cancel);
-        damageCounters.clear(); superDamageCounters.clear(); activeTimers.clear(); activeAdaptations.clear(); superAdaptations.clear(); lastHitTime.clear();
+        activeBossBars.values().forEach(BossBar::removeAll);
+        damageCounters.clear(); superDamageCounters.clear(); activeTimers.clear(); activeAdaptations.clear(); superAdaptations.clear(); lastHitTime.clear(); activeBossBars.clear();
+    }
+
+    @Override
+    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (!sender.hasPermission("adaptation.admin")) {
+            sender.sendMessage(ChatColor.RED + "У вас нет прав на использование этой команды!");
+            return true;
+        }
+
+        if (args.length < 3 || !args[0].equalsIgnoreCase("give")) {
+            sender.sendMessage(ChatColor.RED + "Использование: /adaptation give <игрок> <1/2/3>");
+            return true;
+        }
+
+        Player target = Bukkit.getPlayer(args[1]);
+        if (target == null || !target.isOnline()) {
+            sender.sendMessage(ChatColor.RED + "Игрок не найден или оффлайн!");
+            return true;
+        }
+
+        int lvl;
+        try {
+            lvl = Integer.parseInt(args[2]);
+            if (lvl < 1 || lvl > 3) throw new NumberFormatException();
+        } catch (NumberFormatException e) {
+            sender.sendMessage(ChatColor.RED + "Уровень должен быть от 1 до 3!");
+            return true;
+        }
+
+        ItemStack book = new ItemStack(Material.ENCHANTED_BOOK);
+        ItemMeta meta = book.getItemMeta();
+        if (meta != null) {
+            String strLvl = lvl == 1 ? "I" : lvl == 2 ? "II" : "III";
+            List<String> lore = new ArrayList<>();
+            lore.add(ChatColor.LIGHT_PURPLE + "Адаптация " + strLvl);
+            meta.setLore(lore);
+            book.setItemMeta(meta);
+        }
+
+        target.getInventory().addItem(book);
+        sender.sendMessage(ChatColor.GREEN + "Книга Адаптация " + args[2] + " успешно выдана игроку " + target.getName());
+        return true;
     }
 
     @EventHandler
@@ -152,6 +203,7 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
     private void activateNormal(Player player, String type) {
         UUID uuid = player.getUniqueId(); 
         if (activeTimers.containsKey(uuid)) activeTimers.get(uuid).cancel();
+        if (activeBossBars.containsKey(uuid)) { activeBossBars.get(uuid).removeAll(); activeBossBars.remove(uuid); }
 
         activeAdaptations.put(uuid, type);
         damageCounters.remove(uuid); superDamageCounters.remove(uuid);
@@ -162,12 +214,15 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
                        ChatColor.LIGHT_PURPLE + "" + ChatColor.BOLD + "МАГИИ!";
 
         String line = ChatColor.WHITE + "" + ChatColor.BOLD + "АДАПТАЦИЯ К: " + suff;
-        startTimer(player, line, 10);
+        
+        BarColor barColor = type.equals("MELEE") ? BarColor.RED : type.equals("RANGED") ? BarColor.GREEN : BarColor.PURPLE;
+        createBossBarTimer(player, line, barColor, 10);
     }
 
     private void activateSuper(Player player, String type) {
         UUID uuid = player.getUniqueId();
         if (activeTimers.containsKey(uuid)) activeTimers.get(uuid).cancel();
+        if (activeBossBars.containsKey(uuid)) { activeBossBars.get(uuid).removeAll(); activeBossBars.remove(uuid); }
 
         superAdaptations.put(uuid, true); superDamageCounters.remove(uuid);
         player.addPotionEffect(new PotionEffect(PotionEffectType.ABSORPTION, 160, 1, false, false, true));
@@ -179,24 +234,48 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
                        ChatColor.DARK_PURPLE + "" + ChatColor.UNDERLINE + "" + ChatColor.BOLD + "МАГИИ!";
 
         String line = prefixStyle + "ПОВЫШ. АДАПТАЦИЯ К: " + suff;
-        startTimer(player, line, 8);
+        
+        BarColor barColor = type.equals("MELEE") ? BarColor.RED : type.equals("RANGED") ? BarColor.GREEN : BarColor.PURPLE;
+        createBossBarTimer(player, line, barColor, 8);
     }
 
-    private void startTimer(Player player, String msg, int sec) {
+    private void createBossBarTimer(Player player, String msg, BarColor color, int sec) {
         UUID uuid = player.getUniqueId();
+        BossBar bossBar = Bukkit.createBossBar(msg, color, BarStyle.SOLID);
+        bossBar.addPlayer(player);
+        activeBossBars.put(uuid, bossBar);
+
         activeTimers.put(uuid, new BukkitRunnable() {
-            int time = sec;
+            final double maxTime = sec;
+            double timeLeft = sec;
+
             @Override
             public void run() {
                 Player p = Bukkit.getPlayer(uuid);
-                if (p == null || !p.isOnline() || time <= 0) {
-                    activeAdaptations.remove(uuid); superAdaptations.remove(uuid); superDamageCounters.remove(uuid); activeTimers.remove(uuid);
-                    if (p != null && p.isOnline()) p.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(""));
-                    cancel(); return;
+                
+                if (p == null || !p.isOnline() || timeLeft <= 0) {
+                    if (p != null && p.isOnline() && timeLeft <= 0) {
+                        p.getWorld().playSound(p.getLocation(), Sound.BLOCK_GLASS_BREAK, 1.0f, 0.8f);
+                        p.getWorld().spawnParticle(Particle.SMOKE, p.getLocation().add(0, 1, 0), 10, 0.2, 0.3, 0.2, 0.05);
+                    }
+                    
+                    activeAdaptations.remove(uuid); 
+                    superAdaptations.remove(uuid); 
+                    superDamageCounters.remove(uuid); 
+                    activeTimers.remove(uuid);
+                    
+                    if (activeBossBars.containsKey(uuid)) {
+                        activeBossBars.get(uuid).removeAll();
+                        activeBossBars.remove(uuid);
+                    }
+                    cancel(); 
+                    return;
                 }
-                p.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(msg)); time--;
+
+                bossBar.setProgress(timeLeft / maxTime);
+                timeLeft -= 0.05; 
             }
-        }.runTaskTimer(this, 0L, 20L));
+        }.runTaskTimer(this, 0L, 1L)); // Таймер тикает каждые 0.05 сек для идеальной плавности
     }
 
     private void playBell(Player player, float pitch, long per) {
@@ -228,5 +307,6 @@ public class AdaptationPlugin extends JavaPlugin implements Listener {
         UUID id = e.getPlayer().getUniqueId();
         damageCounters.remove(id); superDamageCounters.remove(id); activeAdaptations.remove(id); superAdaptations.remove(id); lastHitTime.remove(id);
         if (activeTimers.containsKey(id)) { activeTimers.get(id).cancel(); activeTimers.remove(id); }
+        if (activeBossBars.containsKey(id)) { activeBossBars.get(id).removeAll(); activeBossBars.remove(id); }
     }
 }
