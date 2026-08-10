@@ -1,10 +1,10 @@
-name: f8-adaptation-sosicka-bobr551
+name: f8-daptation-sosicka-bobr551
 version: 8
 main: com.yourserver.adaptation.AdaptationPlugin
 api-version: 1.20
 
 commands:
   adaptation:
-    description: вадать книгу адаптации, админка надо
+    description: управление плагином f9-daptation-sosika-bobr551
     permission: adaptation.admin
-    usage: /adaptation give <игрок> <1/2/3>
+    usage: /adaptation <give/reload>
