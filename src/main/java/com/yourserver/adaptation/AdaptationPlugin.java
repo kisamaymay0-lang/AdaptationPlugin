@@ -14,7 +14,6 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.enchantments.Enchantment;
-import org.bukkit.enchantments.EnchantmentTarget;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.entity.Player;
@@ -25,13 +24,14 @@ import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDamageEvent.DamageCause;
 import org.bukkit.event.inventory.PrepareAnvilEvent;
 import org.bukkit.inventory.AnvilInventory;
+import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.meta.EnchantmentStorageMeta;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 
-import java.lang.reflect.Field;
 import java.util.*;
 
 public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExecutor {
@@ -44,17 +44,17 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
     private final Map<UUID, Long> lastHitTime = new HashMap<>();
     private final Map<UUID, BossBar> activeBossBars = new HashMap<>();
     
-    public static Enchantment ADAPTATION_ENCHANT;
+    private NamespacedKey enchantKey;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
-        registerCustomEnchantment();
+        enchantKey = new NamespacedKey(this, "adaptation_lvl");
         getServer().getPluginManager().registerEvents(this, this);
         if (getCommand("adaptation") != null) {
             getCommand("adaptation").setExecutor(this);
         }
-        getLogger().info("Плагин AdaptationPlugin [ENCHANTMENT-API] успешно запущен!");
+        getLogger().info("Плагин AdaptationPlugin [PDC-FINAL] успешно запущен!");
     }
 
     @Override
@@ -64,27 +64,6 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         damageCounters.clear(); superDamageCounters.clear(); activeTimers.clear(); activeAdaptations.clear(); superAdaptations.clear(); lastHitTime.clear(); activeBossBars.clear();
     }
 
-    private void registerCustomEnchantment() {
-        NamespacedKey key = new NamespacedKey(this, "adaptation");
-        
-        Enchantment existing = Enchantment.getByKey(key);
-        if (existing != null) {
-            ADAPTATION_ENCHANT = existing;
-            return;
-        }
-
-        try {
-            Field acceptingField = Enchantment.class.getDeclaredField("acceptingNew");
-            acceptingField.setAccessible(true);
-            acceptingField.set(null, true);
-
-            ADAPTATION_ENCHANT = new CustomEnchantment(key);
-            Enchantment.registerEnchantment(ADAPTATION_ENCHANT);
-        } catch (Exception e) {
-            getLogger().severe("Не удалось зарегистрировать кастомное зачарование через API: " + e.getMessage());
-        }
-    }
-
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!sender.hasPermission("adaptation.admin")) {
@@ -92,13 +71,13 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
             return true;
         }
 
-        if (args.length == 1 && args[0].equalsIgnoreCase("reload")) {
+        if (args.length == 1 && args.equalsIgnoreCase("reload")) {
             reloadConfig();
             sender.sendMessage(ChatColor.GREEN + "Конфигурация AdaptationPlugin успешно перезагружена!");
             return true;
         }
 
-        if (args.length < 3 || !args[0].equalsIgnoreCase("give")) {
+        if (args.length < 3 || !args.equalsIgnoreCase("give")) {
             sender.sendMessage(ChatColor.RED + "Использование: /adaptation give <игрок> <1/2/3> ИЛИ /adaptation reload");
             return true;
         }
@@ -119,14 +98,22 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         }
 
         ItemStack book = new ItemStack(Material.ENCHANTED_BOOK);
-        EnchantmentStorageMeta meta = (EnchantmentStorageMeta) book.getItemMeta();
+        ItemMeta meta = book.getItemMeta();
         if (meta != null) {
-            meta.addStoredEnchant(ADAPTATION_ENCHANT, lvl, true);
+            meta.getPersistentDataContainer().set(enchantKey, PersistentDataType.INTEGER, lvl);
+            
+            String strLvl = lvl == 1 ? "I" : lvl == 2 ? "II" : "III";
+            List<String> lore = new ArrayList<>();
+            lore.add(ChatColor.GRAY + "Адаптация " + strLvl);
+            meta.setLore(lore);
+            
+            meta.addEnchant(Enchantment.LUCK_OF_THE_SEA, 1, true);
+            meta.addItemFlags(ItemFlag.HIDE_ENCHANTS);
             book.setItemMeta(meta);
         }
 
         target.getInventory().addItem(book);
-        sender.sendMessage(ChatColor.GREEN + "Полноценная книга Адаптация " + args[2] + " выдана игроку " + target.getName());
+        sender.sendMessage(ChatColor.GREEN + "Книга Адаптация " + args[2] + " выдана игроку " + target.getName());
         return true;
     }
 
@@ -139,19 +126,39 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         String type = left.getType().name();
         if (!type.contains("HELMET") && !type.contains("CHESTPLATE") && !type.contains("LEGGINGS") && !type.contains("BOOTS")) return;
 
-        int lvlLeft = left.getEnchantmentLevel(ADAPTATION_ENCHANT);
-        
-        EnchantmentStorageMeta rightMeta = (EnchantmentStorageMeta) right.getItemMeta();
-        if (rightMeta == null || !rightMeta.hasStoredEnchant(ADAPTATION_ENCHANT)) return;
-        int lvlRight = rightMeta.getStoredEnchantLevel(ADAPTATION_ENCHANT);
+        int lvlLeft = getStoredLvl(left);
+        int lvlRight = getStoredLvl(right);
+        if (lvlRight == 0) return;
 
         int finalLvl = (lvlLeft == lvlRight && lvlLeft < 3) ? lvlLeft + 1 : Math.max(lvlLeft, lvlRight);
         
         ItemStack result = left.clone();
-        result.addUnsafeEnchantment(ADAPTATION_ENCHANT, finalLvl);
+        ItemMeta meta = result.getItemMeta();
+        if (meta == null) return;
+
+        meta.getPersistentDataContainer().set(enchantKey, PersistentDataType.INTEGER, finalLvl);
+
+        List<String> lore = meta.hasLore() ? meta.getLore() : new ArrayList<>();
+        lore.removeIf(l -> l.contains("Адаптация"));
         
+        String strLvl = finalLvl == 1 ? "I" : finalLvl == 2 ? "II" : "III";
+        lore.add(ChatColor.GRAY + "Адаптация " + strLvl);
+        meta.setLore(lore);
+
+        if (!meta.hasEnchants()) {
+            meta.addEnchant(Enchantment.LUCK_OF_THE_SEA, 1, true);
+            meta.addItemFlags(ItemFlag.HIDE_ENCHANTS);
+        }
+
+        result.setItemMeta(meta);
         event.setResult(result); 
         anvil.setRepairCost(5); 
+    }
+
+    private int getStoredLvl(ItemStack item) {
+        if (item == null || !item.hasItemMeta()) return 0;
+        Integer lvl = item.getItemMeta().getPersistentDataContainer().get(enchantKey, PersistentDataType.INTEGER);
+        return lvl != null ? lvl : 0;
     }
     @EventHandler(priority = EventPriority.HIGH)
     public void onPlayerDamage(EntityDamageEvent event) {
@@ -160,8 +167,9 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
 
         int totalLvl = 0, pieceCount = 0;
         for (ItemStack armor : player.getInventory().getArmorContents()) {
-            if (armor != null && armor.hasItemMeta() && armor.getEnchantmentLevel(ADAPTATION_ENCHANT) > 0) {
-                totalLvl += armor.getEnchantmentLevel(ADAPTATION_ENCHANT);
+            int lvl = getStoredLvl(armor);
+            if (lvl > 0) {
+                totalLvl += lvl;
                 pieceCount++;
             }
         }
@@ -244,7 +252,6 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
                        ChatColor.LIGHT_PURPLE + "" + ChatColor.BOLD + "МАГИИ!";
 
         String line = ChatColor.WHITE + "" + ChatColor.BOLD + "АДАПТАЦИЯ К: " + suff;
-        
         BarColor barColor = type.equals("MELEE") ? BarColor.RED : type.equals("RANGED") ? BarColor.GREEN : BarColor.PURPLE;
         
         int duration = getConfig().getInt("settings.duration-normal", 10);
@@ -266,7 +273,6 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
                        ChatColor.DARK_PURPLE + "" + ChatColor.UNDERLINE + "" + ChatColor.BOLD + "МАГИИ!";
 
         String line = prefixStyle + "ПОВЫШ. АДАПТАЦИЯ К: " + suff;
-        
         BarColor barColor = type.equals("MELEE") ? BarColor.RED : type.equals("RANGED") ? BarColor.GREEN : BarColor.PURPLE;
         
         int duration = getConfig().getInt("settings.duration-super", 8);
@@ -343,16 +349,4 @@ public class AdaptationPlugin extends JavaPlugin implements Listener, CommandExe
         if (activeTimers.containsKey(id)) { activeTimers.get(id).cancel(); activeTimers.remove(id); }
         if (activeBossBars.containsKey(id)) { activeBossBars.get(id).removeAll(); activeBossBars.remove(id); }
     }
-}
-
-class CustomEnchantment extends Enchantment {
-    public CustomEnchantment(NamespacedKey key) { super(key); }
-    @Override public String getName() { return "ADAPTATION"; }
-    @Override public int getMaxLevel() { return 3; }
-    @Override public int getStartLevel() { return 1; }
-    @Override public EnchantmentTarget getItemTarget() { return EnchantmentTarget.ARMOR; }
-    @Override public boolean isTreasure() { return false; }
-    @Override public boolean isCursed() { return false; }
-    @Override public boolean conflictsWith(Enchantment other) { return false; }
-    @Override public boolean canEnchantItem(ItemStack item) { return true; }
 }
